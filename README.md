@@ -41,7 +41,10 @@ Export control compliance is critical for organizations working with dual-use te
 
 ## Project Structure
 
-```text
+```
+regulus/ ├── scraper/ │ ├── bis_scraper.py # Static HTML scraper │ ├── bis_selenium.scraper.py # Selenium fallback for JavaScript pages │ ├── change_tracker.py # Compares current vs. historical entries │ └── utils.py # Helper methods │ ├── data/ │ ├── raw/ # Raw CSVs from scrape │ ├── processed/ # Excel output files │ └── reports/ # Markdown diffs for easy review │ ├── main.py # Execution entrypoint ├── regulus_scraper.py # Full PDF parser + change tracker ├── requirements.txt ├── README.md └── .gitignore
+```
+
 regulus/
 ├── scraper/
 │   ├── __init__.py
