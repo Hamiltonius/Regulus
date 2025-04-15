@@ -1,0 +1,12 @@
+pandas
+requests
+selenium
+PyMuPDF
+openpyxl
+xlsxwriter
+beautifulsoup4   # If your scraper uses bs4
+lxml             # Optional performance boost
+fake-useragent   # If spoofing user agents
+
+
+XlsxWriter
