@@ -1,61 +1,59 @@
-# Regulus — Export Control Scraper & Change Tracker 🛰️
+# Regulus — Export Control Tracker
 
-**Regulus** is a lightweight, extensible Python tool for tracking changes in U.S. export control policy. Built for compliance professionals, policy analysts, and risk managers, Regulus scrapes, parses, and logs policy updates so you don't have to.
-
----
-
-## 🔍 Purpose
-
-Staying compliant with evolving export controls is mission-critical for firms handling dual-use technologies, semiconductors, and advanced computing.
-
-Regulus automates tracking of:
-- 📰 Bureau of Industry and Security (BIS) Federal Register notices  
-- 📄 Export Administration Regulations (EAR) rule changes  
-- 📦 ECCN category adjustments  
-- ⚠️ OFAC sanctions and denied party list entries (planned)
+**Regulus** is a streamlined Python tool designed to monitor and report changes in U.S. export control regulations. Tailored for compliance professionals, analysts, and policy teams, Regulus automates the tracking of federal register notices, extracts insights from source documents, and highlights new additions over time.
 
 ---
 
-## 👥 Who It Helps
+## Purpose
 
-- **Classification teams** maintaining up-to-date ECCN documentation  
-- **Export compliance officers** detecting emerging regulatory risk  
-- **Audit and legal teams** who need versioned logs of rule changes  
-- **Policy analysts** tracking semiconductor & trade-related regulatory signals
+Export control compliance is critical for organizations working with dual-use technologies, semiconductors, and sensitive trade items. Regulus helps teams stay ahead by automating the monitoring of:
 
----
-
-## ⚙️ What It Does
-
-- Scrapes U.S. BIS Federal Register updates (with optional Selenium fallback)
-- Downloads and extracts text from linked PDF documents
-- Identifies:
-  - Entities added to the **Entity List**
-  - Key summaries of **final rules**
-- Compares new data with prior scans and generates:
-  - Excel report with structured results
-  - Markdown report highlighting *only* new changes
-- Ready to be scheduled via `cron` for regular polling
+- Bureau of Industry and Security (BIS) Federal Register notices  
+- Export Administration Regulations (EAR) rule updates  
+- ECCN classification changes  
+- *(Planned)* OFAC sanctions and denied party list entries  
 
 ---
 
-## 🏗️ Project Structure
+## Who It's For
+
+- **Export compliance teams** maintaining accurate, up-to-date documentation  
+- **Classification groups** managing ECCN tracking and reporting  
+- **Audit/legal departments** needing versioned compliance logs  
+- **Policy analysts** following regulatory shifts in technology and trade  
+
+---
+
+## Key Features
+
+- Scrapes BIS Federal Register updates, with Selenium fallback for complex pages  
+- Extracts text from PDFs linked in register entries  
+- Applies regex-based parsing to detect:
+  - Entity List additions  
+  - Final rule summaries  
+- Compares current results against previous scans  
+- Outputs:
+  - Excel reports with tabbed summaries  
+  - Markdown reports highlighting new regulatory changes  
+- Can be run manually or integrated into a scheduled `cron` job  
+
+---
+
+## Project Structure
 
 ```text
 regulus/
 ├── scraper/
 │   ├── __init__.py
-│   ├── bis_scraper.py              # Static BIS HTML scraper
-│   ├── bis_selenium.scraper.py     # Selenium-powered BIS scraper (fallback)
-│   ├── change_tracker.py           # Compares past vs new updates
-│   └── utils.py                    # Common helpers
+│   ├── bis_scraper.py              # Static HTML scraper for BIS updates
+│   ├── bis_selenium.scraper.py     # Selenium-based fallback scraper
+│   ├── change_tracker.py           # Historical diffing & report generation
+│   └── utils.py                    # Helper functions
 │
 ├── data/
-│   ├── raw/                        # Raw CSVs from scrape
-│   ├── processed/                  # Excel output files
-│   └── reports/                    # Markdown change reports
+│   ├── raw/                        # Raw CSV outputs
+│   ├── processed/                  # Excel summaries
+│   └── reports/                    # Markdown diffs
 │
-├── README.md
-├── requirements.txt
-├── main.py                         # Primary orchestrator
-└── .gitignore
+├── main
+
