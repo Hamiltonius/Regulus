@@ -23,38 +23,49 @@ def setup_driver():
     driver = webdriver.Chrome(service=service, options=options)
     return driver
 
-def download_pdf(url, folder="data/pdfs"):
-    """Download a PDF from URL and save to specified folder.
-    
-    Args:
-        url: URL of the PDF to download
-        folder: Directory to save the PDF
-        
-    Returns:
-        Path to saved PDF or None if download failed
-    """
-    if not url.endswith(".pdf"):
-        return None
-    
-    os.makedirs(folder, exist_ok=True)
-    filename = url.split("/")[-1]
-    if not filename:
-        return None
-        
+MAX_PDF_SIZE_MB = 5
+
+from urllib.parse import urlparse
+
+def is_valid_pdf_url(url):
     try:
-        response = requests.get(url, timeout=30)
-        if response.status_code == 200:
-            path = os.path.join(folder, filename)
-            with open(path, "wb") as f:
-                f.write(response.content)
-            print(f"📄 PDF saved: {filename}")
-            return path
+        parsed = urlparse(url)
+        return all([parsed.scheme, parsed.netloc]) and url.lower().endswith('.pdf')
+    except Exception:
+        return False
+
+MAX_PDF_SIZE_MB = 5
+
+def download_pdf(url, folder="data/pdfs"):
+    """Download a PDF from a validated URL with size and content-type checks."""
+    if not is_valid_pdf_url(url):
+        print(f"❌ Skipped invalid URL: {url}")
+        return None
+
+    try:
+        head = requests.head(url, timeout=5)
+        size_bytes = int(head.headers.get("Content-Length", 0))
+        if size_bytes > MAX_PDF_SIZE_MB * 1024 * 1024:
+            print(f"⚠️ Skipped large file ({size_bytes/1e6:.2f} MB): {url}")
+            return None
+
+        response = requests.get(url, stream=True, timeout=10)
+        if response.status_code == 200 and 'application/pdf' in response.headers.get('Content-Type', ''):
+            os.makedirs(folder, exist_ok=True)
+            filename = os.path.basename(url)
+            output_path = os.path.join(folder, filename)
+            with open(output_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            print(f"✅ PDF saved: {output_path}")
+            return output_path
         else:
-            print(f"⚠️ Failed to download {url}: Status code {response.status_code}")
+            print(f"❌ Skipped non-PDF or bad response: {url}")
             return None
     except Exception as e:
-        print(f"⚠️ Failed to download {url}: {e}")
+        print(f"❌ Failed to download {url}: {e}")
         return None
+
 
 def parse_date(date_text):
     """Parse date text in various formats to datetime object.
