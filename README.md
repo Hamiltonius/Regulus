@@ -2,6 +2,14 @@
 
 **Regulus** is a streamlined Python tool designed to monitor and report changes in U.S. export control regulations. Tailored for compliance professionals, analysts, and policy teams, Regulus automates the tracking of federal register notices, extracts insights from source documents, and highlights new additions over time.
 
+## Current Build
+
+The current stable version of Regulus is [`regulus.py`](regulus.py).
+
+This version includes ECCN extraction, PDF analysis, Excel summary output, and a dashboard with guidance tabs for export compliance professionals.
+
+Older builds and experimental files are available in the [`archive/`](archive) folder.
+
 ---
 
 ## Purpose
@@ -41,22 +49,29 @@ Export control compliance is critical for organizations working with dual-use te
 
 ## Project Structure
 
-```
-regulus/ ├── scraper/ │ ├── bis_scraper.py # Static HTML scraper │ ├── bis_selenium.scraper.py # Selenium fallback for JavaScript pages │ ├── change_tracker.py # Compares current vs. historical entries │ └── utils.py # Helper methods │ ├── data/ │ ├── raw/ # Raw CSVs from scrape │ ├── processed/ # Excel output files │ └── reports/ # Markdown diffs for easy review │ ├── main.py # Execution entrypoint ├── regulus_scraper.py # Full PDF parser + change tracker ├── requirements.txt ├── README.md └── .gitignore
-```
 
+```
 regulus/
 ├── scraper/
-│   ├── __init__.py
+│   ├── __init__.py                  # Module initializer
 │   ├── bis_scraper.py              # Static HTML scraper for BIS updates
-│   ├── bis_selenium.scraper.py     # Selenium-based fallback scraper
+│   ├── bis_scraper2.py             # Secondary scraper (variant/test)
 │   ├── change_tracker.py           # Historical diffing & report generation
+│   ├── regulus1.2.py               # Archived v1.2 script
+│   ├── selenium_scraper.py         # Selenium-based fallback scraper
 │   └── utils.py                    # Helper functions
 │
-├── data/
-│   ├── raw/                        # Raw CSV outputs
-│   ├── processed/                  # Excel summaries
-│   └── reports/                    # Markdown diffs
+│   └── data/
+│       ├── pdfs/                   # Downloaded PDFs
+│       ├── processed/              # Excel summaries
+│       └── raw/                    # Raw CSV outputs
 │
-├── main
+├── main.py                         # Optional entrypoint script
+├── regulus.py                      # Current production-ready script (v1.5)
+├── regulus_scraper.py             # Legacy file with redirect notice
+├── requirements.txt
+├── README.md
+├── .gitignore
+└── archive/                        # Archived builds and logs
+```
 
