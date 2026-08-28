@@ -3,7 +3,7 @@ regulus_v2.py
 -------------
 BIS Federal Register notice tracker and ECCN extractor.
 
-CHANGELOG v1 → v2:
+CHANGELOG v1 -> v2:
 - Replaced Selenium/headless Chrome scraper with Federal Register REST API
   (https://www.federalregister.gov/api/v1/documents.json)
 - Removed selenium, webdriver, BeautifulSoup dependencies entirely
@@ -13,7 +13,16 @@ CHANGELOG v1 → v2:
 - Output paths now configurable via environment variables
 - All other pipeline logic (ECCN extraction, PDF download, Excel output) unchanged
 
-Dependencies: requests, pandas, xlsxwriter, PyMuPDF (fitz)
+CHANGELOG v2.1 (staging for scheduled deployment from agentic cluster):
+- Aliased `import pymupdf as fitz` to resolve fitz deprecation warning
+- Fixed Excel write crash ("object of type 'float' has no len()") caused by
+  NaN values re-read from CSV on subsequent runs; combined_df is now
+  sanitized with .fillna("") before being written to Excel
+- Replaced fragile whole-dataframe dedup check (df.equals(prev_df), which
+  breaks on dtype drift between freshly-parsed and CSV-reloaded columns)
+  with a stable set-based comparison on the "url" column
+
+Dependencies: requests, pandas, xlsxwriter, PyMuPDF (imported as pymupdf)
 Previously also required: selenium, webdriver-manager, beautifulsoup4 (removed)
 """
 
@@ -26,7 +35,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
-# ── Configuration (override via environment variables) ──────────────────────
+# -- Configuration (override via environment variables) ----------------------
 LOOKBACK_DAYS   = int(os.environ.get("LOOKBACK_DAYS", 90))
 DATA_RAW_DIR    = os.environ.get("DATA_RAW_DIR", "data/raw")
 DATA_PDF_DIR    = os.environ.get("DATA_PDF_DIR", "data/pdfs")
@@ -50,14 +59,11 @@ FLAG_KEYWORDS = [
     "SMIC", "military end use", "PRC"
 ]
 
-# ── Federal Register API fetch (replaces Selenium scraper) ──────────────────
+# -- Federal Register API fetch (replaces Selenium scraper) ------------------
 
 def fetch_bis_federal_register_notices(lookback_days: int = LOOKBACK_DAYS) -> list[dict]:
     """
     Fetch BIS Federal Register notices via the FR REST API.
-
-    Replaces the Selenium/headless Chrome implementation in v1.
-    Pulls all paginated results for the configured date window.
 
     Args:
         lookback_days: How many days back to pull notices for.
@@ -68,16 +74,6 @@ def fetch_bis_federal_register_notices(lookback_days: int = LOOKBACK_DAYS) -> li
     since_date = (datetime.now() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
     print(f"Fetching BIS Federal Register notices since {since_date} via API...")
 
-    params = {
-        "conditions[agencies][]": BIS_AGENCY_SLUG,
-        "conditions[publication_date][gte]": since_date,
-        "per_page": 1000,
-        "order": "newest",
-    }
-    for field in FR_FIELDS:
-        params[f"fields[]"] = field  # Note: requests handles repeated keys
-
-    # Build params properly for repeated fields[]
     param_list = [
         ("conditions[agencies][]", BIS_AGENCY_SLUG),
         ("conditions[publication_date][gte]", since_date),
@@ -105,7 +101,6 @@ def fetch_bis_federal_register_notices(lookback_days: int = LOOKBACK_DAYS) -> li
         if not results:
             break
 
-        # Infer total pages on first call
         if total_pages is None:
             count = data.get("count", 0)
             total_pages = (count + 999) // 1000
@@ -139,7 +134,7 @@ def fetch_bis_federal_register_notices(lookback_days: int = LOOKBACK_DAYS) -> li
     return all_results
 
 
-# ── Date parsing (unchanged from v1) ────────────────────────────────────────
+# -- Date parsing (unchanged from v1) -----------------------------------------
 
 def parse_date(date_text: str) -> datetime | None:
     """Parse date string in various formats to datetime object."""
@@ -198,7 +193,7 @@ def parse_date(date_text: str) -> datetime | None:
     return None
 
 
-# ── PDF download (unchanged from v1) ────────────────────────────────────────
+# -- PDF download (unchanged from v1) -----------------------------------------
 
 def is_valid_pdf_url(url: str) -> bool:
     try:
@@ -244,7 +239,7 @@ def download_pdf(url: str, folder: str = DATA_PDF_DIR) -> str | None:
         return None
 
 
-# ── Keyword flagging (unchanged from v1) ────────────────────────────────────
+# -- Keyword flagging (unchanged from v1) --------------------------------------
 
 def apply_keyword_flags(df: pd.DataFrame) -> pd.DataFrame:
     """Flag rows containing export control keywords of interest."""
@@ -256,7 +251,7 @@ def apply_keyword_flags(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# ── Excel formatting (unchanged from v1) ────────────────────────────────────
+# -- Excel formatting (unchanged from v1) --------------------------------------
 
 def get_current_quarter() -> str:
     month = datetime.now().month
@@ -297,8 +292,8 @@ def append_to_master(new_df: pd.DataFrame, processed_dir: str = DATA_PROC_DIR) -
     """Append new data to master file and write formatted Excel report."""
     os.makedirs(processed_dir, exist_ok=True)
 
-    quarter_label    = get_current_quarter()
-    master_csv_path  = os.path.join(processed_dir, f"BIS_master_{quarter_label}.csv")
+    quarter_label     = get_current_quarter()
+    master_csv_path   = os.path.join(processed_dir, f"BIS_master_{quarter_label}.csv")
     master_excel_path = os.path.join(processed_dir, f"BIS_master_{quarter_label}.xlsx")
 
     try:
@@ -308,13 +303,16 @@ def append_to_master(new_df: pd.DataFrame, processed_dir: str = DATA_PROC_DIR) -
         else:
             combined_df = new_df
         combined_df.to_csv(master_csv_path, index=False)
+        # Sanitize AFTER the CSV write so the CSV itself keeps real NaN values
+        # for future dedup/comparison; only the Excel-bound copy gets blanked.
+        combined_df = combined_df.fillna("")
     except Exception as e:
         print(f"❌ Error processing master CSV: {e}")
         return
 
-    flagged_df      = combined_df[combined_df["flagged"] == True].copy()
-    pdf_summary_df  = combined_df[["title", "date", "url"]].copy()
-    eccn_summary    = new_df.groupby("publication_date")["eccn_count"].sum().reset_index()
+    flagged_df     = combined_df[combined_df["flagged"] == True].copy()
+    pdf_summary_df = combined_df[["title", "date", "url"]].copy()
+    eccn_summary   = new_df.groupby("publication_date")["eccn_count"].sum().reset_index()
     eccn_summary.columns = ["publication_date", "total_eccns"]
 
     guidance_text = [
@@ -355,7 +353,7 @@ def append_to_master(new_df: pd.DataFrame, processed_dir: str = DATA_PROC_DIR) -
         print(f"❌ Error writing Excel file: {e}")
 
 
-# ── Main pipeline (unchanged from v1) ───────────────────────────────────────
+# -- Main pipeline -------------------------------------------------------------
 
 def main() -> None:
     for d in [DATA_RAW_DIR, DATA_PDF_DIR]:
@@ -406,7 +404,9 @@ def main() -> None:
         print(f"❌ Error creating DataFrame: {e}")
         return
 
-    # Dedup against previous runs
+    # Dedup against previous runs — compare on stable "url" identity set,
+    # not whole-dataframe equality (which breaks on dtype drift between
+    # freshly-parsed columns and columns reloaded from CSV as strings/NaN).
     try:
         previous_files = sorted(
             [f for f in os.listdir(DATA_RAW_DIR) if f.startswith("export_updates_")],
@@ -414,7 +414,7 @@ def main() -> None:
         )
         if previous_files:
             prev_df = pd.read_csv(os.path.join(DATA_RAW_DIR, previous_files[0]))
-            if df.equals(prev_df):
+            if set(df["url"]) == set(prev_df["url"]):
                 print("No new data found since last run.")
                 return
     except Exception as e:
