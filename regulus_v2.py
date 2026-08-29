@@ -22,6 +22,13 @@ CHANGELOG v2.1 (staging for scheduled deployment from agentic cluster):
   breaks on dtype drift between freshly-parsed and CSV-reloaded columns)
   with a stable set-based comparison on the "url" column
 
+CHANGELOG v2.2:
+- Moved the dedup check to run immediately after fetching notices, BEFORE
+  the PDF download / ECCN extraction loop. Previously the check ran after
+  all PDFs were already downloaded and processed, so a "no new data" run
+  still did all the expensive work before printing that nothing was new.
+  Now a redundant run exits early and skips PDF downloads entirely.
+
 Dependencies: requests, pandas, xlsxwriter, PyMuPDF (imported as pymupdf)
 Previously also required: selenium, webdriver-manager, beautifulsoup4 (removed)
 """
@@ -365,6 +372,23 @@ def main() -> None:
 
     bis_data = fetch_bis_federal_register_notices()
 
+    # Dedup check runs BEFORE any PDF download/ECCN extraction — this is the
+    # whole point of checking: skip expensive work on a redundant run, not
+    # just skip the final file write after already doing the work.
+    try:
+        previous_files = sorted(
+            [f for f in os.listdir(DATA_RAW_DIR) if f.startswith("export_updates_")],
+            reverse=True
+        )
+        if previous_files:
+            prev_df = pd.read_csv(os.path.join(DATA_RAW_DIR, previous_files[0]))
+            current_urls = {item["url"] for item in bis_data}
+            if current_urls == set(prev_df["url"]):
+                print("No new data found since last run.")
+                return
+    except Exception as e:
+        print(f"❌ Error comparing with previous data: {e}")
+
     for item in bis_data:
         item["contains_eccn"] = False
         item["eccn_count"]    = 0
@@ -403,22 +427,6 @@ def main() -> None:
     except Exception as e:
         print(f"❌ Error creating DataFrame: {e}")
         return
-
-    # Dedup against previous runs — compare on stable "url" identity set,
-    # not whole-dataframe equality (which breaks on dtype drift between
-    # freshly-parsed columns and columns reloaded from CSV as strings/NaN).
-    try:
-        previous_files = sorted(
-            [f for f in os.listdir(DATA_RAW_DIR) if f.startswith("export_updates_")],
-            reverse=True
-        )
-        if previous_files:
-            prev_df = pd.read_csv(os.path.join(DATA_RAW_DIR, previous_files[0]))
-            if set(df["url"]) == set(prev_df["url"]):
-                print("No new data found since last run.")
-                return
-    except Exception as e:
-        print(f"❌ Error comparing with previous data: {e}")
 
     if "date" in df.columns and df["date"].notnull().any():
         df.sort_values(by="date", ascending=False, inplace=True)
