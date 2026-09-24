@@ -4,11 +4,11 @@
 
 ## Current Build
 
-The current stable version of Regulus is [`regulus.py`](regulus.py).
+The current stable version of Regulus is [`regulus_v3.py`](regulus_v3.py).
 
-This version includes ECCN extraction, PDF analysis, Excel summary output, and a dashboard with guidance tabs for export compliance professionals.
+This version pulls new Federal Register documents (BIS, State, OFAC/Treasury) via the Federal Register REST API, scores them for export-control relevance, sends material documents to an LLM for structured compliance analysis, archives everything to SQLite, saves a formatted PDF per alert, and emails material alerts. It also includes an isolated, additive test path (`eccn_test/`) that downloads source PDFs and cross-checks ECCN references via regex against the LLM-derived field.
 
-Older builds and experimental files are available in the [`archive/`](archive) folder.
+`regulus.py` (v1.5, Excel-based) and `regulus_v2.py` (v2.2, first API-based rewrite) are retained for reference, tagged [`v2-legacy-selenium-excel`](../../releases/tag/v2-legacy-selenium-excel).
 
 ---
 
