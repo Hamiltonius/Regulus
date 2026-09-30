@@ -189,6 +189,41 @@ def _extract_json_text(content_blocks):
     return text
 
 
+class Stage2JSONDecodeError(ValueError):
+    """Raised by call_anthropic_stage2 when the text _extract_json_text
+    produced is not valid JSON. This is a DIAGNOSTIC-ONLY addition: it
+    changes nothing about parsing, repair, retry, or validation — it
+    exists solely so a caller that wants to preserve the failure for
+    inspection (e.g. the isolated acceptance-test runner) can do so,
+    without call_anthropic_stage2 itself performing any disk I/O, repair,
+    regex cleanup, or fallback parsing.
+
+    str(this) is IDENTICAL to str() of the underlying json.JSONDecodeError
+    — every existing `except Exception as e: ...str(e)...` caller (the
+    retry loop in run_due_diligence, the acceptance runner) sees the exact
+    same message it saw before this class existed. Only callers that
+    explicitly look for these new attributes see anything different.
+
+    Attributes (all non-secret — no request headers, no API key, nothing
+    from the request side is captured here, only response-side data):
+      raw_text        the exact string that was passed to json.loads()
+      content_blocks  the full, unmodified content-block array from the
+                       Anthropic response (preserves block order/types —
+                       text vs server_tool_use vs web_search_tool_result —
+                       so a reviewer can see exactly how the response was
+                       structured around web_search activity)
+      response_meta   dict of non-secret response metadata: stop_reason,
+                       model, usage, content_block_count, content_block_types
+    """
+
+    def __init__(self, json_error: json.JSONDecodeError, *, raw_text: str,
+                 content_blocks: list, response_meta: dict):
+        super().__init__(str(json_error))
+        self.raw_text = raw_text
+        self.content_blocks = content_blocks
+        self.response_meta = response_meta
+
+
 def call_anthropic_stage2(doc: dict, analysis: dict, api_key: str) -> dict:
     """Real Stage 2 call: Anthropic Messages API with the server-side web
     search tool enabled, so the model can actually research primary
@@ -226,9 +261,28 @@ def call_anthropic_stage2(doc: dict, analysis: dict, api_key: str) -> dict:
         timeout=180,
     )
     resp.raise_for_status()
-    content = resp.json()["content"]
+    response_json = resp.json()
+    content = response_json["content"]
     text = _extract_json_text(content)
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        # Diagnostic-only: preserve exactly what failed to parse and how
+        # the response was shaped, without repairing, re-parsing, or
+        # falling back to anything. Re-raised, never swallowed — the
+        # retry/failure handling in run_due_diligence is unchanged.
+        response_meta = {
+            "stop_reason": response_json.get("stop_reason"),
+            "model": response_json.get("model"),
+            "usage": response_json.get("usage"),
+            "content_block_count": len(content) if isinstance(content, list) else None,
+            "content_block_types": (
+                [b.get("type") for b in content] if isinstance(content, list) else None
+            ),
+        }
+        raise Stage2JSONDecodeError(
+            e, raw_text=text, content_blocks=content, response_meta=response_meta
+        ) from e
 
 
 def due_diligence_review(doc: dict, analysis: dict, *, api_key: Optional[str] = None,

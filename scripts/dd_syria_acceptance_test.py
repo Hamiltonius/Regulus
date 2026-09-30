@@ -417,6 +417,7 @@ def main() -> int:
     # -- Stage 2 -----------------------------------------------------------
     print("[3/6] Stage 2 research (real Anthropic call, web_search enabled) ...")
     stage2_raw, stage2_call_error = None, None
+    stage2_failure_diagnostics = []
     for attempt in range(1, dd_pipeline.STAGE2_MAX_ATTEMPTS + 1):
         try:
             stage2_raw = dd_pipeline.due_diligence_review(
@@ -424,12 +425,28 @@ def main() -> int:
             )
             stage2_call_error = None
             break
+        except dd_pipeline.Stage2JSONDecodeError as e:
+            # Diagnostic-only path: preserve exactly what the model/response
+            # produced for this failed attempt (raw text passed to
+            # json.loads(), the full content-block array, non-secret
+            # response metadata) without repairing or re-parsing it. The
+            # retry/failure semantics below are identical to the plain
+            # Exception branch -- stage2_call_error is still just str(e).
+            stage2_call_error = str(e)
+            diag_path = _write_stage2_failure_diagnostic(
+                out_dir=args.out_dir, document_number=document_number,
+                attempt=attempt, error=e,
+            )
+            stage2_failure_diagnostics.append(diag_path)
+            print(f"  [warn] Stage 2 attempt {attempt}/{dd_pipeline.STAGE2_MAX_ATTEMPTS} failed JSON "
+                  f"parsing (raw response preserved at {diag_path}): {e}", file=sys.stderr)
         except Exception as e:
             stage2_call_error = str(e)
             print(f"  [warn] Stage 2 attempt {attempt}/{dd_pipeline.STAGE2_MAX_ATTEMPTS} failed: {e}",
                   file=sys.stderr)
 
     report["stage2_elapsed_seconds"] = _timing.get("stage2_seconds")
+    report["stage2_failure_diagnostics"] = stage2_failure_diagnostics
 
     if stage2_call_error is not None:
         dd_pipeline.persist_due_diligence(
@@ -584,6 +601,45 @@ def _write_report(report: dict, out_dir: str, document_number: str) -> str:
     path = os.path.join(out_dir, f"{ts}_{safe_doc_num}_dd_acceptance.json")
     with open(path, "w") as f:
         json.dump(report, f, indent=2, default=str)
+    return path
+
+
+def _write_stage2_failure_diagnostic(out_dir: str, document_number: str, attempt: int,
+                                      error: "dd_pipeline.Stage2JSONDecodeError") -> str:
+    """Preserve everything needed to diagnose a Stage 2 JSON-decode
+    failure, exactly as produced, under the isolated acceptance-test
+    diagnostics directory:
+
+      - the exact text that was passed to json.loads() (raw_text)
+      - the full, unmodified content-block array from the Anthropic
+        response, in order (content_blocks) -- so block types/boundaries
+        around web_search activity (text / server_tool_use /
+        web_search_tool_result) are visible exactly as returned
+      - non-secret response metadata (stop_reason, model, usage,
+        content-block count/types)
+
+    Writes only. Never repairs, re-parses, regex-extracts, or coerces the
+    captured content in any way, and never includes ANTHROPIC_API_KEY,
+    request headers, or any other secret -- none of those are present on
+    the Stage2JSONDecodeError object in the first place; only the
+    response-side data dd_pipeline.call_anthropic_stage2 attached to it.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    safe_doc_num = re.sub(r"[^A-Za-z0-9_-]", "_", document_number or "unknown")
+    path = os.path.join(
+        out_dir, f"{ts}_{safe_doc_num}_stage2_attempt{attempt}_json_decode_failure.json"
+    )
+    payload = {
+        "document_number": document_number,
+        "attempt": attempt,
+        "json_decode_error": str(error),
+        "extracted_text_passed_to_json_loads": getattr(error, "raw_text", None),
+        "response_metadata": getattr(error, "response_meta", None),
+        "raw_content_blocks": getattr(error, "content_blocks", None),
+    }
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2, default=str)
     return path
 
 
