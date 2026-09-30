@@ -945,18 +945,14 @@ def main():
         "SELECT doc_hash, document_number, fetched_at, title, summary, effective_date, authority, countries, "
         "entities, eccns, ear_sections, licensing_impact, defense_impact, "
         "remaining_controls, recommended_actions, primary_source_url, confidence, "
-        "change_type, score, due_diligence_ran, headline, bottom_line, why_it_matters, "
-        "historical_significance, what_did_not_change, compliance_attention, watch_next, "
-        "final_confidence FROM alerts WHERE score > ? AND emailed_at IS NULL",
+        "change_type, score, due_diligence_ran FROM alerts WHERE score > ? AND emailed_at IS NULL",
         (SCORE_DIGEST_MAX,),
     ).fetchall()
 
     for r in unsent:
         (doc_hash, document_number, fetched_at, title, summary, effective_date, authority, countries, entities,
          eccns, ear_sections, licensing_impact, defense_impact, remaining_controls,
-         recommended_actions, url, confidence, change_type, score, due_diligence_ran,
-         headline, bottom_line, why_it_matters, historical_significance, what_did_not_change,
-         compliance_attention, watch_next, final_confidence) = r
+         recommended_actions, url, confidence, change_type, score, due_diligence_ran) = r
         analysis = {
             "title": title, "summary": summary, "effective_date": effective_date,
             "authority": json.loads(authority or "[]"), "countries": json.loads(countries or "[]"),
@@ -966,23 +962,19 @@ def main():
             "recommended_actions": json.loads(recommended_actions or "[]"),
             "confidence": confidence, "change_type": change_type,
         }
-        # DD-escalated alerts that got a validated Stage 3 output (headline
-        # is non-NULL only when the UPDATE after a successful DD run wrote
-        # it) retry with the same Stage-3-only content the first attempt
-        # would have sent — never silently downgrading a validated DD
-        # alert to Stage-1-only content just because email delivery failed
-        # once.
-        final_stage3 = None
-        if due_diligence_ran and headline:
-            final_stage3 = {
-                "headline": headline, "bottom_line": bottom_line, "why_it_matters": why_it_matters,
-                "historical_significance": historical_significance,
-                "what_did_not_change": what_did_not_change,
-                "compliance_attention": json.loads(compliance_attention or "[]"),
-                "watch_next": json.loads(watch_next or "[]"),
-                "confidence": final_confidence,
-                "sources": [],  # not re-fetched from due_diligence_records for this summary retry path
-            }
+        # DD-escalated alerts recover their ORIGINAL validated Stage 3
+        # output — including its correct, C2-compliant sources — from
+        # due_diligence_records, not from flattened alerts columns (alerts
+        # deliberately carries no sources column; see
+        # dd_pipeline.get_latest_valid_stage3). This does NOT call Stage 2/
+        # Stage 3 again, does NOT perform web research, and does NOT create
+        # a new due_diligence_records row — it only reads back what the
+        # original successful run already persisted. If no valid record
+        # with a persisted Stage 3 result exists (DD never ran, or it ran
+        # but never produced a valid Stage 3 output), this falls back
+        # safely to ordinary Stage 1 retry behavior below rather than
+        # inventing or reconstructing evidence.
+        final_stage3 = dd_pipeline.get_latest_valid_stage3(conn, doc_hash) if due_diligence_ran else None
         try:
             if final_stage3:
                 save_pdf_dd(final_stage3, url, score, doc_hash, document_number, fetched_at)
@@ -992,7 +984,7 @@ def main():
             log.error("Retry PDF save failed for %s: %s", doc_hash, e)
         try:
             if final_stage3:
-                subject = f"[Export Control Alert - DD] {(headline or doc_hash)[:100]}"
+                subject = f"[Export Control Alert - DD] {(final_stage3.get('headline') or doc_hash)[:100]}"
                 send_email(subject, format_email_dd(final_stage3, url, score))
             else:
                 subject = f"[Export Control Alert] {(title or doc_hash)[:100]}"

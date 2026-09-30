@@ -452,6 +452,58 @@ count_for_doc = conn.execute("SELECT COUNT(*) FROM due_diligence_records WHERE d
                               (doc["document_number"],)).fetchone()[0]
 check("both DD runs for this document are retained", count_for_doc == 2, f"count={count_for_doc}")
 
+# ---------------------------------------------------------------------------
+# Retry-path source-provenance recovery (get_latest_valid_stage3)
+# ---------------------------------------------------------------------------
+print("\n=== get_latest_valid_stage3: retry-path provenance recovery ===")
+
+# The Syria run above (outcome) succeeded with a valid Stage 3 output —
+# persist_stage3_result should already have written it.
+recovered = ddp.get_latest_valid_stage3(conn, doc_hash)
+check("recovered Stage 3 output is not None", recovered is not None)
+check("recovered headline matches the original validated Stage 3 output",
+      recovered is not None and recovered.get("headline") == "Syria — Remaining CBW Act Arms Restrictions Waived")
+check("recovered sources match the original validated sources exactly",
+      recovered is not None and recovered.get("sources") == outcome.stage2_raw["sources"], str(recovered))
+
+# outcome_again (the second Syria run) should now be the "latest" one —
+# prove get_latest_valid_stage3 tracks dd_id order, not just "any valid row".
+recovered_after_second_run = ddp.get_latest_valid_stage3(conn, doc_hash)
+check("latest recovery still returns a fully-formed Stage 3 record after a 2nd run",
+      recovered_after_second_run is not None and recovered_after_second_run.get("sources") == outcome.stage2_raw["sources"])
+
+# A document that was never escalated (no due_diligence_records row at
+# all) must fail safe: None, never a fabricated record.
+check("get_latest_valid_stage3 returns None for an unescalated document",
+      ddp.get_latest_valid_stage3(conn, "hash_never_escalated_0001") is None)
+
+# A document whose DD run was invalid (malformed Stage 2, from the earlier
+# test) has a due_diligence_records row but no final_json — must also fail
+# safe to None, never surface an invalid/partial record as if it were
+# validated.
+check("get_latest_valid_stage3 returns None when Stage 2 was invalid (no Stage 3 ever ran)",
+      ddp.get_latest_valid_stage3(conn, doc_hash_bad) is None)
+
+# A document whose Stage 2 was valid but Stage 3 violated C2 (from the
+# earlier test) also has no final_json persisted — must fail safe too,
+# never recover the rejected/fabricated-source output.
+check("get_latest_valid_stage3 returns None when Stage 3 was rejected for a C2 violation",
+      ddp.get_latest_valid_stage3(conn, doc_hash_c2) is None)
+
+# Corrupt stored JSON must fail safe, not raise and not fabricate.
+doc_hash_corrupt = "hash_corrupt_0001"
+make_alert_row(conn, doc_hash_corrupt, "2026-19011", "Corrupt JSON test")
+corrupt_dd_id = ddp.persist_due_diligence(
+    conn, document_number="2026-19011", doc_hash=doc_hash_corrupt, dd_json_raw={"x": 1},
+    validation_status="valid", validation_errors=[], research_status="complete",
+    confidence="High", model=ddp.STAGE2_MODEL,
+)
+conn.execute("UPDATE due_diligence_records SET final_json = ? WHERE dd_id = ?",
+             ("{not valid json", corrupt_dd_id))
+conn.commit()
+check("corrupt final_json fails safe to None rather than raising",
+      ddp.get_latest_valid_stage3(conn, doc_hash_corrupt) is None)
+
 conn.close()
 try:
     os.remove(TMP_DB)

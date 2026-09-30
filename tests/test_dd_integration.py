@@ -262,6 +262,119 @@ check("due_diligence_records row is valid/complete", dd_records[0][1:] == ("vali
 conn.close()
 
 # ---------------------------------------------------------------------------
+# Scenario 2: DD alert's first email send fails; the SAME main() run's
+# unsent-alert retry recovers it. Proves the fix end to end: the retried
+# email carries the original validated sources, and Stage 2/Stage 3 are
+# NOT invoked a second time just to reconstruct it.
+# ---------------------------------------------------------------------------
+print("\n=== Scenario 2: DD alert email fails first send, recovered on retry ===")
+
+fd2, TMP_DB2 = tempfile.mkstemp(suffix=".db", prefix="regulus_integration_test2_")
+os.close(fd2)
+os.remove(TMP_DB2)
+os.environ["DB_PATH"] = TMP_DB2
+os.environ["PDF_DIR"] = tempfile.mkdtemp(prefix="regulus_integration_pdfs2_")
+
+importlib.reload(ddp)
+importlib.reload(rv)
+
+SYRIA_DOC_2 = dict(SYRIA_DOC, document_number="2026-30003",
+                   html_url="https://www.federalregister.gov/d/2026-30003")
+_ANALYSES_BY_DOC_NUM_2 = {SYRIA_DOC_2["document_number"]: dict(SYRIA_ANALYSIS, title=SYRIA_DOC_2["title"])}
+
+stage2_call_count = {"n": 0}
+stage3_call_count = {"n": 0}
+send_attempts = {"n": 0}
+sent_emails_2 = []
+saved_pdfs_2 = []
+
+
+def fake_fetch_documents_2(since_date):
+    return [SYRIA_DOC_2]
+
+
+def fake_analyze_with_llm_2(doc):
+    return dict(_ANALYSES_BY_DOC_NUM_2[doc["document_number"]])
+
+
+def fake_call_stage2_2(doc, analysis, api_key):
+    stage2_call_count["n"] += 1
+    return dict(STAGE2_RECORD)
+
+
+def fake_call_stage3_2(analysis, dd_record, api_key):
+    stage3_call_count["n"] += 1
+    return dict(STAGE3_RECORD)
+
+
+def fake_send_email_2(subject, body):
+    send_attempts["n"] += 1
+    if send_attempts["n"] == 1:
+        raise RuntimeError("simulated SMTP failure on first attempt")
+    sent_emails_2.append({"subject": subject, "body": body})
+
+
+def fake_save_pdf_2(analysis, doc_url, score, doc_hash, document_number=None, fetched_at=None):
+    saved_pdfs_2.append({"kind": "stage1"})
+    return "/fake/path/stage1.pdf"
+
+
+def fake_save_pdf_dd_2(final, doc_url, score, doc_hash, document_number=None, fetched_at=None):
+    saved_pdfs_2.append({"kind": "stage3", "sources": final.get("sources")})
+    return "/fake/path/stage3.pdf"
+
+
+def fake_run_eccn_regex_test_2(doc, doc_hash, document_number):
+    return None, None
+
+
+rv.fetch_documents = fake_fetch_documents_2
+rv.analyze_with_llm = fake_analyze_with_llm_2
+rv.send_email = fake_send_email_2
+rv.save_pdf = fake_save_pdf_2
+rv.save_pdf_dd = fake_save_pdf_dd_2
+rv.run_eccn_regex_test = fake_run_eccn_regex_test_2
+ddp.call_anthropic_stage2 = fake_call_stage2_2
+ddp.call_anthropic_stage3 = fake_call_stage3_2
+
+rv.main()
+
+check("send_email was attempted twice (first-send failure + retry)", send_attempts["n"] == 2,
+      f"attempts={send_attempts['n']}")
+check("exactly one email actually delivered", len(sent_emails_2) == 1, str(sent_emails_2))
+check("Stage 2 was called exactly ONCE despite the retry (not re-run to reconstruct the email)",
+      stage2_call_count["n"] == 1, f"stage2_calls={stage2_call_count['n']}")
+check("Stage 3 was called exactly ONCE despite the retry (not re-run to reconstruct the email)",
+      stage3_call_count["n"] == 1, f"stage3_calls={stage3_call_count['n']}")
+
+retried_email = sent_emails_2[0] if sent_emails_2 else {"subject": "", "body": ""}
+check("retried DD email used the DD subject prefix", "DD" in retried_email.get("subject", ""), str(retried_email))
+check("retried DD email body contains the original validated source URL",
+      STAGE2_RECORD["sources"][0]["url"] in retried_email.get("body", ""), str(retried_email))
+
+stage3_pdf_calls = [p for p in saved_pdfs_2 if p["kind"] == "stage3"]
+# Two stage3-style PDF saves are expected: one from the initial per-document
+# pass (save_pdf_dd runs before the email attempt, regardless of whether
+# that email succeeds) and one from the retry pass — the fix under test is
+# that BOTH carry the original validated sources, never an empty list.
+check("two stage3-style PDFs saved (initial pass + retry pass)", len(stage3_pdf_calls) == 2, str(saved_pdfs_2))
+check("every stage3-style PDF carries the original validated sources, never an empty list",
+      all(p["sources"] == STAGE2_RECORD["sources"] for p in stage3_pdf_calls), str(stage3_pdf_calls))
+
+conn2 = rv.get_db()
+dd_records_2 = conn2.execute("SELECT COUNT(*) FROM due_diligence_records").fetchone()[0]
+check("retry did NOT create a second due_diligence_records row", dd_records_2 == 1, f"count={dd_records_2}")
+emailed_row = conn2.execute("SELECT emailed_at FROM alerts WHERE document_number = ?",
+                             (SYRIA_DOC_2["document_number"],)).fetchone()
+check("alert is marked emailed after the successful retry", emailed_row is not None and emailed_row[0] is not None)
+conn2.close()
+
+try:
+    os.remove(TMP_DB2)
+except OSError:
+    pass
+
+# ---------------------------------------------------------------------------
 # Cleanup
 # ---------------------------------------------------------------------------
 try:

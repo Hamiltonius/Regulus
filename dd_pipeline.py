@@ -346,6 +346,19 @@ def ensure_dd_schema(conn) -> None:
         )
     """)
 
+    # Additive to due_diligence_records itself, NOT to alerts: the
+    # validated Stage 3 output (when Stage 3 ran and passed both its
+    # structural validator and the C2 source-reuse check), keyed to the
+    # exact dd_id/Stage 2 evidence it was synthesized from. This is what
+    # lets the unsent-alert retry path in regulus_v3.main() recover a
+    # DD-escalated alert's original validated sources without re-running
+    # Stage 2/Stage 3, without web research, and without a new
+    # due_diligence_records row — see get_latest_valid_stage3() below.
+    dd_cols = {row[1] for row in conn.execute("PRAGMA table_info(due_diligence_records)")}
+    if "final_json" not in dd_cols:
+        conn.execute("ALTER TABLE due_diligence_records ADD COLUMN final_json TEXT")
+        log.info("Migrated schema: added column due_diligence_records.final_json")
+
     alerts_cols = {row[1] for row in conn.execute("PRAGMA table_info(alerts)")}
     additions = {
         "due_diligence_ran": "INTEGER DEFAULT 0",
@@ -391,6 +404,50 @@ def persist_due_diligence(conn, *, document_number, doc_hash, dd_json_raw,
     )
     conn.commit()
     return cur.lastrowid
+
+
+def persist_stage3_result(conn, dd_id: int, stage3_json: dict) -> None:
+    """UPDATE (never INSERT) the existing due_diligence_records row for
+    this dd_id with its validated Stage 3 output. Called exactly once, from
+    inside run_due_diligence, only after Stage 3 has passed both its
+    structural validator and the C2 source-reuse check — never from the
+    retry path, which only reads this column back."""
+    conn.execute(
+        "UPDATE due_diligence_records SET final_json = ? WHERE dd_id = ?",
+        (json.dumps(stage3_json), dd_id),
+    )
+    conn.commit()
+
+
+def get_latest_valid_stage3(conn, doc_hash: str) -> Optional[dict]:
+    """Recover the most recent validated Stage 3 output for a document,
+    for the unsent-alert retry path in regulus_v3.main(). Read-only: never
+    calls Stage 2/Stage 3, never performs web research, never writes a new
+    due_diligence_records row. Returns None if no valid record with a
+    persisted Stage 3 result exists — callers must fail safely to existing
+    Stage 1 retry behavior in that case, never invent or reconstruct
+    evidence.
+
+    "Latest" is by dd_id (insertion order), matching the spec's own
+    reasoning for why dd_id is autoincrement rather than document_number
+    being the primary key: DD may be re-run, and the newest validated run
+    is the one that should govern.
+    """
+    row = conn.execute(
+        "SELECT final_json FROM due_diligence_records "
+        "WHERE doc_hash = ? AND validation_status = 'valid' AND final_json IS NOT NULL "
+        "ORDER BY dd_id DESC LIMIT 1",
+        (doc_hash,),
+    ).fetchone()
+    if not row:
+        return None
+    try:
+        return json.loads(row[0])
+    except (TypeError, json.JSONDecodeError):
+        # Corrupt stored JSON is a data problem, not a reason to invent a
+        # substitute — fail safe, same as "no record found".
+        log.error("Corrupt final_json in due_diligence_records for doc_hash=%s", doc_hash)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -521,5 +578,9 @@ def run_due_diligence(doc: dict, analysis: dict, conn, doc_hash: str, document_n
     else:
         outcome.stage3 = stage3_raw
         outcome.stage3_valid = True
+        # Persist the validated Stage 3 output onto its Stage 2 row (UPDATE,
+        # not INSERT) so the unsent-alert retry path can recover it later
+        # without re-running Stage 2/Stage 3 or performing web research.
+        persist_stage3_result(conn, dd_id, stage3_raw)
 
     return outcome
