@@ -120,8 +120,11 @@ check("Stage 2 request now sends max_tokens=20000 (raised 4000 -> 8000 -> 20000 
       captured_request_bodies and captured_request_bodies[-1]["max_tokens"] == 20000)
 check("STAGE2_MAX_TOKENS constant is exactly 20000",
       ddp.STAGE2_MAX_TOKENS == 20000)
-check("Stage 3's max_tokens is untouched at 1500 -- this is a Stage 2-only change",
-      "\"max_tokens\": 1500," in open(
+check("Stage 3's max_tokens is controlled by its own STAGE3_MAX_TOKENS constant, not a "
+      "literal shared with Stage 2 -- Stage 2's max_tokens change here cannot affect it "
+      "(STAGE3_MAX_TOKENS was later raised 1500 -> 4000 in a separate, Stage-3-only round; "
+      "see test_dd_stage3_diagnostics.py for that assertion)",
+      "STAGE3_MAX_TOKENS" in open(
           os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "dd_pipeline.py")
       ).read())
 check("Stage 2 request body is otherwise unchanged: same model, same system prompt, "

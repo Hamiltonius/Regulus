@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 """
 Tests for the Stage 3 JSON-decode-failure diagnostic capture added to
-dd_pipeline.call_anthropic_stage3 (Stage3JSONDecodeError) and to
-scripts/dd_syria_acceptance_test.py's Stage 3 retry loop, plus the
-Spinner("Synthesizing executive intelligence") wrapping added around
-each Stage 3 attempt.
+dd_pipeline.call_anthropic_stage3 (Stage3JSONDecodeError), the
+Spinner("Synthesizing executive intelligence") wrapping each Stage 3
+attempt in scripts/dd_syria_acceptance_test.py, and the follow-up fix
+those diagnostics identified: Stage 3's max_tokens raised 1500 -> 4000
+after a live Syria run showed both Stage 3 attempts hitting
+stop_reason="max_tokens" at exactly output_tokens=1500 (proven, not
+assumed, by the diagnostic capture this file also tests).
 
-This mirrors tests/test_dd_stage2_diagnostics.py exactly, for the Stage 3
-side. Both additions are DIAGNOSTIC/PRESENTATION-ONLY: no parsing
-behavior, prompts, model selection, max_tokens, timeout, retry behavior,
-validators, or persistence were touched. These tests prove that claim:
+This mirrors tests/test_dd_stage2_diagnostics.py's structure for the
+Stage 3 side. The diagnostic/spinner additions are presentation/
+diagnostic-only; the max_tokens change is the one deliberate functional
+change. These tests prove both claims:
 
   - the success path (valid JSON) is byte-for-byte unaffected
-  - Stage 3's max_tokens (1500) and timeout (60) are UNCHANGED by this
-    round -- explicitly asserted, since the live run's "Unterminated
-    string" errors are only suspected (not proven) to be truncation, and
-    the user's instruction was diagnostics-only, no max_tokens increase
+  - Stage 3's request now sends max_tokens=4000 (STAGE3_MAX_TOKENS),
+    and timeout (60) is UNCHANGED -- both explicitly asserted
+  - Stage 2's max_tokens (20000) and timeout (600) are UNCHANGED --
+    this is a Stage 3-only change
   - on a JSON-decode failure, str(the new exception) is IDENTICAL to
     str() of the underlying json.JSONDecodeError, so every existing
     `except Exception as e: ...str(e)...` caller sees exactly the
@@ -89,8 +92,9 @@ class FakeResponse:
 
 
 # ---------------------------------------------------------------------------
-# 1. Success path is byte-for-byte unaffected, and Stage 3's request shape
-#    (max_tokens=1500, timeout=60) is explicitly confirmed UNCHANGED.
+# 1. Success path is byte-for-byte unaffected. Stage 3's max_tokens is
+#    confirmed raised to 4000 (STAGE3_MAX_TOKENS); timeout=60 is confirmed
+#    UNCHANGED.
 # ---------------------------------------------------------------------------
 
 VALID_STAGE3_JSON = {
@@ -122,9 +126,12 @@ check("success path: call_anthropic_stage3 still returns the parsed dict unchang
       result == VALID_STAGE3_JSON)
 check("success path: the real api_key was passed through to the request headers",
       captured_headers and captured_headers[-1]["x-api-key"] == FAKE_API_KEY)
-check("Stage 3 request still sends max_tokens=1500 -- NOT increased this round "
-      "(truncation is only suspected, not proven, from stop_reason evidence yet)",
-      captured_request_bodies and captured_request_bodies[-1]["max_tokens"] == 1500)
+check("Stage 3 request sends max_tokens=4000 (raised 1500 -> 4000 after a live Syria run "
+      "proved, via these same diagnostics, that both attempts hit stop_reason='max_tokens' "
+      "at exactly output_tokens=1500)",
+      captured_request_bodies and captured_request_bodies[-1]["max_tokens"] == 4000)
+check("STAGE3_MAX_TOKENS constant is exactly 4000",
+      ddp.STAGE3_MAX_TOKENS == 4000)
 check("Stage 3 request still sends timeout=60 -- unchanged by this round",
       captured_timeouts and captured_timeouts[-1] == 60)
 check("Stage 3 request body is otherwise unchanged: same model, same system prompt, "
@@ -376,7 +383,10 @@ VALID_STAGE2_JSON = {
 
 
 def fake_post_stage2_success_stage3_truncated(url, headers=None, json=None, timeout=None):
-    # Route by max_tokens: Stage 2 requests 20000, Stage 3 requests 1500.
+    # Route by max_tokens: Stage 2 requests STAGE2_MAX_TOKENS (20000),
+    # Stage 3 requests STAGE3_MAX_TOKENS (4000, after this round's fix) --
+    # compared against the live constants, not a hardcoded literal, so
+    # this routing stays correct regardless of either value.
     if json.get("max_tokens") == ddp.STAGE2_MAX_TOKENS:
         return FakeResponse({
             "stop_reason": "end_turn", "model": ddp.STAGE2_MODEL,

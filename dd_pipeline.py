@@ -62,6 +62,19 @@ STAGE2_MAX_TOKENS = 20000
 # does not change retry count, backoff, or any other pipeline behavior.
 STAGE2_TIMEOUT_SECONDS = 600
 
+# Raised 1500 -> 4000. A live Syria acceptance run hit stop_reason=
+# "max_tokens" on both Stage 3 attempts -- attempt 1 truncated mid
+# watch_next, attempt 2 truncated before completion, both at exactly
+# output_tokens=1500. Stage 3 diagnostics (Stage3JSONDecodeError's
+# response_meta) proved this directly; it was not assumed. 4000 gives
+# ~2.7x headroom while keeping Stage 3 a bounded executive-synthesis
+# step, deliberately far below Stage 2's 20000 (Stage 3 does not search
+# and is not meant to become a second research agent). Stage 3 prompt,
+# schema, model, timeout, parsing/extraction, retry behavior, and the
+# C2 source-reuse check are all untouched -- this is the only thing
+# that changed. Stage 2 is entirely unaffected.
+STAGE3_MAX_TOKENS = 4000
+
 # Sentinel research_status used ONLY for pipeline-level failures (the LLM
 # call itself failed, or its output could not be parsed as JSON at all) —
 # distinct from the model's own semantic enum (complete|partial|
@@ -397,7 +410,7 @@ def call_anthropic_stage3(analysis: dict, dd_record: dict, api_key: str) -> dict
         },
         json={
             "model": STAGE3_MODEL,
-            "max_tokens": 1500,
+            "max_tokens": STAGE3_MAX_TOKENS,
             "system": STAGE3_SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": user_content}],
         },
