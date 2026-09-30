@@ -2,10 +2,11 @@
 """
 Tests for the Stage 2 JSON-decode-failure diagnostic capture added to
 dd_pipeline.call_anthropic_stage2 (Stage2JSONDecodeError) and to
-scripts/dd_syria_acceptance_test.py's Stage 2 retry loop, plus the single
-follow-up fix those diagnostics identified: Stage 2's max_tokens raised
-from 4000 to 8000 (commit after b634378) after a live Syria run showed
-stop_reason="max_tokens" truncating the final JSON text block mid-string.
+scripts/dd_syria_acceptance_test.py's Stage 2 retry loop, plus the
+follow-up fixes those diagnostics identified: Stage 2's max_tokens raised
+4000 -> 8000 -> 20000 across two live Syria runs, both of which hit
+stop_reason="max_tokens" (the second while still inside the sources array
+at ~29.5K characters).
 
 The diagnostic-capture change itself is DIAGNOSTIC-ONLY: no parsing
 behavior, prompts, model selection, web_search config, retry behavior,
@@ -114,11 +115,11 @@ check("success path: no exception raised, no diagnostic machinery engaged",
 check("success path: the real api_key was passed through to the request headers "
       "(sanity check that our fake captures what a real call would send)",
       captured_headers and captured_headers[-1]["x-api-key"] == FAKE_API_KEY)
-check("Stage 2 request now sends max_tokens=8000 (raised from 4000 after the live "
-      "Syria run showed stop_reason='max_tokens' truncating the final JSON block)",
-      captured_request_bodies and captured_request_bodies[-1]["max_tokens"] == 8000)
-check("STAGE2_MAX_TOKENS constant is exactly 8000",
-      ddp.STAGE2_MAX_TOKENS == 8000)
+check("Stage 2 request now sends max_tokens=20000 (raised 4000 -> 8000 -> 20000 after two "
+      "live Syria runs both hit stop_reason='max_tokens', the second truncating mid-sources-array)",
+      captured_request_bodies and captured_request_bodies[-1]["max_tokens"] == 20000)
+check("STAGE2_MAX_TOKENS constant is exactly 20000",
+      ddp.STAGE2_MAX_TOKENS == 20000)
 check("Stage 3's max_tokens is untouched at 1500 -- this is a Stage 2-only change",
       "\"max_tokens\": 1500," in open(
           os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "dd_pipeline.py")

@@ -42,16 +42,19 @@ PROMPT_VERSION = "1.0"
 STAGE2_MODEL = "claude-sonnet-4-6"
 STAGE3_MODEL = "claude-sonnet-4-6"
 
-# Raised from 4000 -> 8000 after a live Syria acceptance run showed Stage 2
-# hitting stop_reason="max_tokens" mid-JSON (5 web_search rounds, a single
-# ~15K-char final text block cut off physically mid-string). That run's
-# preserved diagnostics (Stage2JSONDecodeError; see b634378) showed the
-# multi-text-block-concatenation hypothesis falsified for this case: there
-# was exactly one text block, and json.loads() correctly rejected the
-# truncated JSON it was handed. This constant is the only thing that
-# changed as a result -- prompt, schema, web_search config, extraction,
-# parsing, retry, validators, and Gate are all untouched.
-STAGE2_MAX_TOKENS = 8000
+# 4000 -> 8000 -> 20000. Two successive live Syria acceptance runs both
+# hit stop_reason="max_tokens": first at 4000 (single ~15K-char final text
+# block cut off mid-string), then at 8000 -- one attempt truncated before
+# the JSON even started (narration + a ```json fence at the very end of
+# budget), the other reached ~29.5K characters and was still inside the
+# sources array when it ran out. Server-side web_search activity (each
+# search round's narration + query) also consumes this same output-token
+# budget before the model starts writing the evidence package, on top of
+# the package's own size. 20000 gives real headroom for both, well under
+# claude-sonnet-4-6's 128K synchronous output ceiling. Prompt, schema,
+# model, web_search config, extraction/parsing, retry, validators, Gate,
+# and Stage 3 are all untouched -- this is the only thing that changed.
+STAGE2_MAX_TOKENS = 20000
 
 # Sentinel research_status used ONLY for pipeline-level failures (the LLM
 # call itself failed, or its output could not be parsed as JSON at all) —
