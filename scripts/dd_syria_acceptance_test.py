@@ -111,6 +111,7 @@ import argparse          # noqa: E402
 import hashlib            # noqa: E402
 import json               # noqa: E402
 import re                 # noqa: E402
+import threading          # noqa: E402
 import time               # noqa: E402
 from datetime import datetime, timezone  # noqa: E402
 
@@ -217,6 +218,104 @@ def explain_gate(analysis: dict, doc: dict) -> list:
         reasons.append(f"raw document title/abstract mentions high-context jurisdiction(s): {matched_raw}")
 
     return reasons
+
+
+# ---------------------------------------------------------------------------
+# Terminal activity indicator (presentation only).
+#
+# Stage 2 research calls can legitimately run for several minutes (20000
+# max_tokens, 5-6 web_search rounds, 600s read timeout). This is purely
+# cosmetic: it writes to the terminal on a background thread and has no
+# effect on control flow, retries, timing capture, or any captured
+# diagnostic data. It lives only in this script, never in dd_pipeline.py.
+# ---------------------------------------------------------------------------
+
+_SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+def _format_elapsed(seconds: float) -> str:
+    """MM:SS only -- no hour rollover, no percentage/progress estimate
+    (there is nothing to estimate against; we don't know how long a
+    given Stage 2 call will take)."""
+    total = max(0, int(seconds))
+    minutes, secs = divmod(total, 60)
+    return f"{minutes:02d}:{secs:02d}"
+
+
+class Spinner:
+    """A one-line animated spinner with elapsed MM:SS, for use as a
+    context manager around a single blocking call:
+
+        with Spinner("Researching regulatory history"):
+            result = some_blocking_call()
+
+    Starts immediately on __enter__, stops and clears its line on
+    __exit__ -- on success, on an exception (re-raised unchanged), or
+    simply because the caller chose to wrap only one retry attempt at a
+    time. Runs on a daemon background thread so a failure to join on
+    stop() can never hang the process.
+
+    Writes to stderr by default so it never mixes into anything a
+    caller might capture from stdout. Skips the animation entirely when
+    the stream isn't a terminal (redirected to a file, captured by a
+    test runner, non-interactive) -- there's nothing useful to animate
+    for a log file, and this keeps every test deterministic: no thread,
+    no timer, no real-time dependency, when output isn't a tty.
+    """
+
+    def __init__(self, label: str, interval: float = 0.1, stream=None):
+        self.label = label
+        self.interval = interval
+        self.stream = stream if stream is not None else sys.stderr
+        self._stop_event = threading.Event()
+        self._thread = None
+        self._start_time = None
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.stop()
+        return False  # never swallow an exception from the wrapped call
+
+    def start(self):
+        is_tty = getattr(self.stream, "isatty", lambda: False)()
+        if not is_tty:
+            return
+        self._start_time = time.monotonic()
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self):
+        i = 0
+        while not self._stop_event.is_set():
+            elapsed = _format_elapsed(time.monotonic() - self._start_time)
+            frame = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
+            line = f"\r{frame} {self.label} │ {elapsed} elapsed "
+            try:
+                self.stream.write(line)
+                self.stream.flush()
+            except Exception:
+                # Presentation-only: a write failure here must never
+                # surface as a pipeline error. Just stop animating.
+                return
+            i += 1
+            self._stop_event.wait(self.interval)
+
+    def stop(self):
+        if self._thread is None:
+            return
+        self._stop_event.set()
+        self._thread.join(timeout=2)
+        self._thread = None
+        try:
+            # Clear the line so retry/warning output below it is clean.
+            self.stream.write("\r" + " " * (len(self.label) + 40) + "\r")
+            self.stream.flush()
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -420,9 +519,10 @@ def main() -> int:
     stage2_failure_diagnostics = []
     for attempt in range(1, dd_pipeline.STAGE2_MAX_ATTEMPTS + 1):
         try:
-            stage2_raw = dd_pipeline.due_diligence_review(
-                doc, analysis, api_key=api_key, call_stage2=_timed_call_stage2
-            )
+            with Spinner("Researching regulatory history"):
+                stage2_raw = dd_pipeline.due_diligence_review(
+                    doc, analysis, api_key=api_key, call_stage2=_timed_call_stage2
+                )
             stage2_call_error = None
             break
         except dd_pipeline.Stage2JSONDecodeError as e:

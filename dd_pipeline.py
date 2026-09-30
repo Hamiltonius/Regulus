@@ -56,6 +56,12 @@ STAGE3_MODEL = "claude-sonnet-4-6"
 # and Stage 3 are all untouched -- this is the only thing that changed.
 STAGE2_MAX_TOKENS = 20000
 
+# Raised 180 -> 600 alongside the max_tokens increase: a 20000-token
+# completion with 5-6 web_search rounds can legitimately take several
+# minutes end to end, and 180s left no margin. Read-timeout only --
+# does not change retry count, backoff, or any other pipeline behavior.
+STAGE2_TIMEOUT_SECONDS = 600
+
 # Sentinel research_status used ONLY for pipeline-level failures (the LLM
 # call itself failed, or its output could not be parsed as JSON at all) —
 # distinct from the model's own semantic enum (complete|partial|
@@ -272,7 +278,7 @@ def call_anthropic_stage2(doc: dict, analysis: dict, api_key: str) -> dict:
             "messages": [{"role": "user", "content": user_content}],
             "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 8}],
         },
-        timeout=180,
+        timeout=STAGE2_TIMEOUT_SECONDS,
     )
     resp.raise_for_status()
     response_json = resp.json()
