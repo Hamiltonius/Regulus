@@ -113,6 +113,7 @@ import json               # noqa: E402
 import re                 # noqa: E402
 import threading          # noqa: E402
 import time               # noqa: E402
+import urllib.parse       # noqa: E402
 from datetime import datetime, timezone  # noqa: E402
 
 import requests           # noqa: E402
@@ -413,6 +414,80 @@ def check_ungrounded_claims(stage3_raw, stage2_raw) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# "SOURCES USED" summary (presentation/observability only).
+#
+# Reads ONLY the already-validated Stage 2 `sources` array -- no new web
+# calls, no LLM classification, no reputation scoring, no persistence or
+# schema of any kind. Just: extract each source's hostname, deduplicate,
+# and show whether any record from that host was marked primary_source.
+# ---------------------------------------------------------------------------
+
+def _extract_hostname(url: str) -> str:
+    """Best-effort hostname extraction for display purposes only (e.g.
+    'https://www.federalregister.gov/d/2025-00001' -> 'federalregister.gov').
+    Strips a leading 'www.' for readability. Returns '' for anything that
+    doesn't parse to a usable host -- callers skip those rather than
+    inventing a placeholder domain."""
+    if not isinstance(url, str) or not url:
+        return ""
+    try:
+        netloc = urllib.parse.urlparse(url).netloc
+    except ValueError:
+        return ""
+    host = netloc.split("@")[-1].split(":")[0].lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
+def summarize_sources_used(stage2_sources: list) -> list:
+    """Deterministic summary of the Stage 2 sources array: one entry per
+    unique hostname, in the order first seen, with:
+      - primary: True if ANY source record from that host has
+        primary_source == True (primary takes precedence over any
+        secondary record from the same host)
+      - count: how many Stage 2 source records came from that host
+
+    Returns a list of {"domain", "primary", "count"} dicts sorted with
+    PRIMARY hosts first, then by source-record count (descending) within
+    each group, then alphabetically as a tiebreak -- matching the
+    requested display order. Non-dict entries and URLs that don't yield a
+    hostname are skipped (not counted, not shown)."""
+    by_domain = {}
+    order = []
+    for s in stage2_sources or []:
+        if not isinstance(s, dict):
+            continue
+        domain = _extract_hostname(s.get("url"))
+        if not domain:
+            continue
+        if domain not in by_domain:
+            by_domain[domain] = {"domain": domain, "primary": False, "count": 0}
+            order.append(domain)
+        by_domain[domain]["count"] += 1
+        if s.get("primary_source"):
+            by_domain[domain]["primary"] = True
+    rows = [by_domain[d] for d in order]
+    rows.sort(key=lambda r: (not r["primary"], -r["count"], r["domain"]))
+    return rows
+
+
+def format_sources_used(rows: list) -> str:
+    """Pure formatting of summarize_sources_used()'s output into the
+    requested fixed-width 'SOURCES USED' block. No computation here."""
+    width = 40
+    lines = ["SOURCES USED", "─" * width]
+    for r in rows:
+        marker = "✓" if r["primary"] else "•"
+        tier = "PRIMARY" if r["primary"] else "SECONDARY"
+        noun = "source" if r["count"] == 1 else "sources"
+        lines.append(f"{marker} {r['domain']:<26}{tier:<11} {r['count']} {noun}")
+    lines.append("─" * width)
+    lines.append(f"{len(rows)} unique website{'s' if len(rows) != 1 else ''} used")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -705,10 +780,18 @@ def main() -> int:
         report["stage3_valid"] = True
 
     report["run_finished_at"] = datetime.now(timezone.utc).isoformat()
+
+    sources_used = summarize_sources_used(
+        stage2_raw.get("sources", []) if isinstance(stage2_raw, dict) else []
+    )
+    report["sources_used"] = sources_used
+
     out_path = _write_report(report, args.out_dir, document_number)
     conn.close()
     _cleanup(args.keep_db)
 
+    print()
+    print(format_sources_used(sources_used))
     print(f"\nDone. Diagnostic report: {out_path}")
     return 0
 
