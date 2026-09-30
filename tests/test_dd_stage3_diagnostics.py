@@ -3,22 +3,24 @@
 Tests for the Stage 3 JSON-decode-failure diagnostic capture added to
 dd_pipeline.call_anthropic_stage3 (Stage3JSONDecodeError), the
 Spinner("Synthesizing executive intelligence") wrapping each Stage 3
-attempt in scripts/dd_syria_acceptance_test.py, and the follow-up fix
-those diagnostics identified: Stage 3's max_tokens raised 1500 -> 4000
-after a live Syria run showed both Stage 3 attempts hitting
-stop_reason="max_tokens" at exactly output_tokens=1500 (proven, not
-assumed, by the diagnostic capture this file also tests).
+attempt in scripts/dd_syria_acceptance_test.py, and the two follow-up
+fixes those diagnostics identified, each proven by a live Syria run
+before being applied:
+  1. max_tokens raised 1500 -> 4000 (both attempts hit
+     stop_reason="max_tokens" at exactly output_tokens=1500)
+  2. timeout raised 60 -> 180 (once #1 was in place, both attempts
+     instead hit a 60-second HTTP read timeout)
 
 This mirrors tests/test_dd_stage2_diagnostics.py's structure for the
 Stage 3 side. The diagnostic/spinner additions are presentation/
-diagnostic-only; the max_tokens change is the one deliberate functional
-change. These tests prove both claims:
+diagnostic-only; max_tokens and timeout are the two deliberate
+functional changes. These tests prove all of that:
 
   - the success path (valid JSON) is byte-for-byte unaffected
-  - Stage 3's request now sends max_tokens=4000 (STAGE3_MAX_TOKENS),
-    and timeout (60) is UNCHANGED -- both explicitly asserted
+  - Stage 3's request now sends max_tokens=4000 (STAGE3_MAX_TOKENS)
+    and timeout=180 (STAGE3_TIMEOUT_SECONDS) -- both explicitly asserted
   - Stage 2's max_tokens (20000) and timeout (600) are UNCHANGED --
-    this is a Stage 3-only change
+    these are Stage 3-only changes
   - on a JSON-decode failure, str(the new exception) is IDENTICAL to
     str() of the underlying json.JSONDecodeError, so every existing
     `except Exception as e: ...str(e)...` caller sees exactly the
@@ -93,8 +95,10 @@ class FakeResponse:
 
 # ---------------------------------------------------------------------------
 # 1. Success path is byte-for-byte unaffected. Stage 3's max_tokens is
-#    confirmed raised to 4000 (STAGE3_MAX_TOKENS); timeout=60 is confirmed
-#    UNCHANGED.
+#    confirmed raised to 4000 (STAGE3_MAX_TOKENS), and its HTTP read
+#    timeout is confirmed raised to 180 (STAGE3_TIMEOUT_SECONDS) -- a
+#    later live run hit a 60s read timeout on both attempts once the
+#    max_tokens fix was already in place.
 # ---------------------------------------------------------------------------
 
 VALID_STAGE3_JSON = {
@@ -132,8 +136,14 @@ check("Stage 3 request sends max_tokens=4000 (raised 1500 -> 4000 after a live S
       captured_request_bodies and captured_request_bodies[-1]["max_tokens"] == 4000)
 check("STAGE3_MAX_TOKENS constant is exactly 4000",
       ddp.STAGE3_MAX_TOKENS == 4000)
-check("Stage 3 request still sends timeout=60 -- unchanged by this round",
-      captured_timeouts and captured_timeouts[-1] == 60)
+check("Stage 3 request sends timeout=180 (raised 60 -> 180 after a live Syria run hit a "
+      "60-second HTTP read timeout on both attempts, once the max_tokens fix was already "
+      "in place)",
+      captured_timeouts and captured_timeouts[-1] == 180)
+check("STAGE3_TIMEOUT_SECONDS constant is exactly 180",
+      ddp.STAGE3_TIMEOUT_SECONDS == 180)
+check("Stage 2's timeout (600) is untouched by this round -- this is a Stage 3-only change",
+      ddp.STAGE2_TIMEOUT_SECONDS == 600)
 check("Stage 3 request body is otherwise unchanged: same model, same system prompt, "
       "no tools (Stage 3 may not search, per spec rule 7)",
       captured_request_bodies[-1]["model"] == ddp.STAGE3_MODEL

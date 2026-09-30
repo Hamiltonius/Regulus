@@ -75,6 +75,16 @@ STAGE2_TIMEOUT_SECONDS = 600
 # that changed. Stage 2 is entirely unaffected.
 STAGE3_MAX_TOKENS = 4000
 
+# Raised 60 -> 180. With the 1500->4000 max_tokens fix already in place,
+# the next live Syria run moved the Stage 3 failure boundary: both
+# attempts failed with a 60-second HTTP read timeout rather than a JSON
+# truncation. 180s gives real margin for a 4000-token completion without
+# turning Stage 3 into a long-running call like Stage 2's 600s (Stage 3
+# has no web_search rounds to wait on). Read-timeout only -- does not
+# change max_tokens, retry count, backoff, or any other pipeline
+# behavior. Stage 2's own timeout (600s) is untouched.
+STAGE3_TIMEOUT_SECONDS = 180
+
 # Sentinel research_status used ONLY for pipeline-level failures (the LLM
 # call itself failed, or its output could not be parsed as JSON at all) —
 # distinct from the model's own semantic enum (complete|partial|
@@ -414,7 +424,7 @@ def call_anthropic_stage3(analysis: dict, dd_record: dict, api_key: str) -> dict
             "system": STAGE3_SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": user_content}],
         },
-        timeout=60,
+        timeout=STAGE3_TIMEOUT_SECONDS,
     )
     resp.raise_for_status()
     response_json = resp.json()

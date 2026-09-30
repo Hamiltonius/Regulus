@@ -100,8 +100,11 @@ except Exception:
 check("call_anthropic_stage2 sends timeout=600 to requests.post (raised from 180)",
       _captured_timeouts and _captured_timeouts[-1] == 600)
 
-check("Stage 3's timeout is untouched at 60 -- this is a Stage 2-only change",
-      "timeout=60," in open(
+check("Stage 3's timeout is controlled by its own STAGE3_TIMEOUT_SECONDS constant, not a "
+      "literal shared with Stage 2 -- Stage 2's timeout change here cannot affect it "
+      "(STAGE3_TIMEOUT_SECONDS was later raised 60 -> 180 in a separate, Stage-3-only round; "
+      "see test_dd_stage3_diagnostics.py for that assertion)",
+      "STAGE3_TIMEOUT_SECONDS" in open(
           os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "dd_pipeline.py")
       ).read())
 
