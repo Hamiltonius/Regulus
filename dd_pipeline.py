@@ -42,6 +42,17 @@ PROMPT_VERSION = "1.0"
 STAGE2_MODEL = "claude-sonnet-4-6"
 STAGE3_MODEL = "claude-sonnet-4-6"
 
+# Raised from 4000 -> 8000 after a live Syria acceptance run showed Stage 2
+# hitting stop_reason="max_tokens" mid-JSON (5 web_search rounds, a single
+# ~15K-char final text block cut off physically mid-string). That run's
+# preserved diagnostics (Stage2JSONDecodeError; see b634378) showed the
+# multi-text-block-concatenation hypothesis falsified for this case: there
+# was exactly one text block, and json.loads() correctly rejected the
+# truncated JSON it was handed. This constant is the only thing that
+# changed as a result -- prompt, schema, web_search config, extraction,
+# parsing, retry, validators, and Gate are all untouched.
+STAGE2_MAX_TOKENS = 8000
+
 # Sentinel research_status used ONLY for pipeline-level failures (the LLM
 # call itself failed, or its output could not be parsed as JSON at all) —
 # distinct from the model's own semantic enum (complete|partial|
@@ -253,7 +264,7 @@ def call_anthropic_stage2(doc: dict, analysis: dict, api_key: str) -> dict:
         },
         json={
             "model": STAGE2_MODEL,
-            "max_tokens": 4000,
+            "max_tokens": STAGE2_MAX_TOKENS,
             "system": STAGE2_SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": user_content}],
             "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 8}],

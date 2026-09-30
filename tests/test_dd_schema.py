@@ -333,7 +333,15 @@ check("no unexpected top-level files added under repo root",
       set(os.listdir(repo_root)) - {".git", ".gitignore", "README.md", "regulus.py",
                                      "regulus_scraper.py", "regulus_v2.py", "regulus_v3.py",
                                      "requirements.txt", "scraper", "docs", "dd_schema.py",
-                                     "dd_pipeline.py", "tests", "__pycache__"} == set())
+                                     "dd_pipeline.py", "tests", "__pycache__",
+                                     # scripts/: the isolated live acceptance-test runner
+                                     # (831b9b4), not a DD behavior change.
+                                     "scripts",
+                                     # diagnostics/: gitignored output directory the
+                                     # acceptance runner writes its reports into
+                                     # (b634378) -- may or may not exist on disk
+                                     # depending on whether it's been run locally.
+                                     "diagnostics"} == set())
 
 # ---------------------------------------------------------------------------
 # Summary

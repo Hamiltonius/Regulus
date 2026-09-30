@@ -2,13 +2,18 @@
 """
 Tests for the Stage 2 JSON-decode-failure diagnostic capture added to
 dd_pipeline.call_anthropic_stage2 (Stage2JSONDecodeError) and to
-scripts/dd_syria_acceptance_test.py's Stage 2 retry loop.
+scripts/dd_syria_acceptance_test.py's Stage 2 retry loop, plus the single
+follow-up fix those diagnostics identified: Stage 2's max_tokens raised
+from 4000 to 8000 (commit after b634378) after a live Syria run showed
+stop_reason="max_tokens" truncating the final JSON text block mid-string.
 
-This is a DIAGNOSTIC-ONLY change: no parsing behavior, prompts, model
-selection, max_tokens, web_search config, retry behavior, validators, or
-Gate behavior were touched. These tests exist specifically to prove that
+The diagnostic-capture change itself is DIAGNOSTIC-ONLY: no parsing
+behavior, prompts, model selection, web_search config, retry behavior,
+validators, or Gate behavior were touched. These tests prove that
 claim -- that adding diagnostic capture does not change success/failure
-semantics anywhere in the pipeline:
+semantics anywhere in the pipeline -- and separately prove that the
+max_tokens change is exactly what it claims to be: one integer, nothing
+else in the Stage 2 request body, Stage 3 untouched:
 
   - the success path (valid JSON) is byte-for-byte unaffected
   - on a JSON-decode failure, str(the new exception) is IDENTICAL to
@@ -89,6 +94,7 @@ VALID_STAGE2_JSON = {
 
 def fake_post_success(url, headers=None, json=None, timeout=None):
     captured_headers.append(headers)
+    captured_request_bodies.append(json)
     return FakeResponse({
         "stop_reason": "end_turn",
         "model": ddp.STAGE2_MODEL,
@@ -98,6 +104,7 @@ def fake_post_success(url, headers=None, json=None, timeout=None):
 
 
 captured_headers = []
+captured_request_bodies = []
 ddp.requests.post = fake_post_success
 result = ddp.call_anthropic_stage2({"title": "t"}, {"confidence": "High"}, FAKE_API_KEY)
 check("success path: call_anthropic_stage2 still returns the parsed dict unchanged",
@@ -107,6 +114,21 @@ check("success path: no exception raised, no diagnostic machinery engaged",
 check("success path: the real api_key was passed through to the request headers "
       "(sanity check that our fake captures what a real call would send)",
       captured_headers and captured_headers[-1]["x-api-key"] == FAKE_API_KEY)
+check("Stage 2 request now sends max_tokens=8000 (raised from 4000 after the live "
+      "Syria run showed stop_reason='max_tokens' truncating the final JSON block)",
+      captured_request_bodies and captured_request_bodies[-1]["max_tokens"] == 8000)
+check("STAGE2_MAX_TOKENS constant is exactly 8000",
+      ddp.STAGE2_MAX_TOKENS == 8000)
+check("Stage 3's max_tokens is untouched at 1500 -- this is a Stage 2-only change",
+      "\"max_tokens\": 1500," in open(
+          os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "dd_pipeline.py")
+      ).read())
+check("Stage 2 request body is otherwise unchanged: same model, same system prompt, "
+      "same web_search tool config (max_uses=8) -- only max_tokens moved",
+      captured_request_bodies[-1]["model"] == ddp.STAGE2_MODEL
+      and captured_request_bodies[-1]["system"] == ddp.STAGE2_SYSTEM_PROMPT
+      and captured_request_bodies[-1]["tools"] ==
+      [{"type": "web_search_20250305", "name": "web_search", "max_uses": 8}])
 
 
 # ---------------------------------------------------------------------------
