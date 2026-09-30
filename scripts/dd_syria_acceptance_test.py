@@ -612,19 +612,38 @@ def main() -> int:
     # -- Stage 3 -----------------------------------------------------------
     print("[5/6] Stage 3 synthesis (real Anthropic call, no tools) ...")
     stage3_raw, stage3_call_error = None, None
+    stage3_failure_diagnostics = []
     for attempt in range(1, dd_pipeline.STAGE3_MAX_ATTEMPTS + 1):
         try:
-            stage3_raw = dd_pipeline.synthesize_final(
-                analysis, stage2_raw, api_key=api_key, call_stage3=_timed_call_stage3
-            )
+            with Spinner("Synthesizing executive intelligence"):
+                stage3_raw = dd_pipeline.synthesize_final(
+                    analysis, stage2_raw, api_key=api_key, call_stage3=_timed_call_stage3
+                )
             stage3_call_error = None
             break
+        except dd_pipeline.Stage3JSONDecodeError as e:
+            # Diagnostic-only path, mirroring the Stage 2 branch above:
+            # preserve exactly what the model/response produced for this
+            # failed attempt (raw text passed to json.loads(), the full
+            # content-block array, non-secret response metadata) without
+            # repairing or re-parsing it. Retry/failure semantics below are
+            # identical to the plain Exception branch -- stage3_call_error
+            # is still just str(e).
+            stage3_call_error = str(e)
+            diag_path = _write_stage3_failure_diagnostic(
+                out_dir=args.out_dir, document_number=document_number,
+                attempt=attempt, error=e,
+            )
+            stage3_failure_diagnostics.append(diag_path)
+            print(f"  [warn] Stage 3 attempt {attempt}/{dd_pipeline.STAGE3_MAX_ATTEMPTS} failed JSON "
+                  f"parsing (raw response preserved at {diag_path}): {e}", file=sys.stderr)
         except Exception as e:
             stage3_call_error = str(e)
             print(f"  [warn] Stage 3 attempt {attempt}/{dd_pipeline.STAGE3_MAX_ATTEMPTS} failed: {e}",
                   file=sys.stderr)
 
     report["stage3_elapsed_seconds"] = _timing.get("stage3_seconds")
+    report["stage3_failure_diagnostics"] = stage3_failure_diagnostics
 
     if stage3_call_error is not None:
         report["stage3_result"] = None
@@ -729,6 +748,47 @@ def _write_stage2_failure_diagnostic(out_dir: str, document_number: str, attempt
     safe_doc_num = re.sub(r"[^A-Za-z0-9_-]", "_", document_number or "unknown")
     path = os.path.join(
         out_dir, f"{ts}_{safe_doc_num}_stage2_attempt{attempt}_json_decode_failure.json"
+    )
+    payload = {
+        "document_number": document_number,
+        "attempt": attempt,
+        "json_decode_error": str(error),
+        "extracted_text_passed_to_json_loads": getattr(error, "raw_text", None),
+        "response_metadata": getattr(error, "response_meta", None),
+        "raw_content_blocks": getattr(error, "content_blocks", None),
+    }
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2, default=str)
+    return path
+
+
+def _write_stage3_failure_diagnostic(out_dir: str, document_number: str, attempt: int,
+                                      error: "dd_pipeline.Stage3JSONDecodeError") -> str:
+    """Preserve everything needed to diagnose a Stage 3 JSON-decode
+    failure, exactly as produced, under the isolated acceptance-test
+    diagnostics directory. Mirrors _write_stage2_failure_diagnostic
+    exactly -- see that function's docstring for the full rationale.
+
+      - the exact text that was passed to json.loads() (raw_text)
+      - the full, unmodified content-block array from the Anthropic
+        response, in order (content_blocks) -- Stage 3 has no web_search
+        tool (spec rule 7), so this is expected to be a single text
+        block, but it is preserved exactly as returned rather than
+        assumed
+      - non-secret response metadata (stop_reason, model, usage,
+        content-block count/types)
+
+    Writes only. Never repairs, re-parses, regex-extracts, or coerces the
+    captured content in any way, and never includes ANTHROPIC_API_KEY,
+    request headers, or any other secret -- none of those are present on
+    the Stage3JSONDecodeError object in the first place; only the
+    response-side data dd_pipeline.call_anthropic_stage3 attached to it.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    safe_doc_num = re.sub(r"[^A-Za-z0-9_-]", "_", document_number or "unknown")
+    path = os.path.join(
+        out_dir, f"{ts}_{safe_doc_num}_stage3_attempt{attempt}_json_decode_failure.json"
     )
     payload = {
         "document_number": document_number,

@@ -354,6 +354,33 @@ this shape:
 """
 
 
+class Stage3JSONDecodeError(ValueError):
+    """Raised by call_anthropic_stage3 when the text _extract_json_text
+    produced is not valid JSON. Mirrors Stage2JSONDecodeError exactly —
+    see that class's docstring. DIAGNOSTIC-ONLY: no parsing, repair,
+    retry, or validation behavior changes as a result of this class
+    existing. str(this) is IDENTICAL to str() of the underlying
+    json.JSONDecodeError, so every existing `except Exception as e:
+    ...str(e)...` caller (run_due_diligence's retry/logging, the
+    acceptance runner) sees the exact same message it saw before.
+
+    Attributes (all non-secret — response-side only, nothing from the
+    request):
+      raw_text        the exact string that was passed to json.loads()
+      content_blocks  the full, unmodified content-block array from the
+                       Anthropic response
+      response_meta   dict of non-secret response metadata: stop_reason,
+                       model, usage, content_block_count, content_block_types
+    """
+
+    def __init__(self, json_error: json.JSONDecodeError, *, raw_text: str,
+                 content_blocks: list, response_meta: dict):
+        super().__init__(str(json_error))
+        self.raw_text = raw_text
+        self.content_blocks = content_blocks
+        self.response_meta = response_meta
+
+
 def call_anthropic_stage3(analysis: dict, dd_record: dict, api_key: str) -> dict:
     """Real Stage 3 call. No tools — Stage 3 may not search (spec rule 7)."""
     user_content = json.dumps({
@@ -377,9 +404,27 @@ def call_anthropic_stage3(analysis: dict, dd_record: dict, api_key: str) -> dict
         timeout=60,
     )
     resp.raise_for_status()
-    content = resp.json()["content"]
+    response_json = resp.json()
+    content = response_json["content"]
     text = _extract_json_text(content)
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        # Diagnostic-only: preserve exactly what failed to parse and how
+        # the response was shaped, without repairing, re-parsing, or
+        # falling back to anything. Re-raised, never swallowed.
+        response_meta = {
+            "stop_reason": response_json.get("stop_reason"),
+            "model": response_json.get("model"),
+            "usage": response_json.get("usage"),
+            "content_block_count": len(content) if isinstance(content, list) else None,
+            "content_block_types": (
+                [b.get("type") for b in content] if isinstance(content, list) else None
+            ),
+        }
+        raise Stage3JSONDecodeError(
+            e, raw_text=text, content_blocks=content, response_meta=response_meta
+        ) from e
 
 
 def synthesize_final(analysis: dict, dd_record: dict, *, api_key: Optional[str] = None,
