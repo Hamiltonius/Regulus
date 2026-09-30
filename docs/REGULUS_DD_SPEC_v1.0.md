@@ -2,6 +2,9 @@
 STATUS: FROZEN
 VERSION: 1.0
 DATE: 2026-09-30
+CLARIFICATIONS APPENDED: 2026-09-30 (see "Clarifications" section — both
+items resolve ambiguity surfaced during the schemas/validators
+implementation slice; neither redesigns or expands the architecture)
 
 ## Purpose
 Implement risk-based due-diligence escalation and evidence-grounded
@@ -104,11 +107,13 @@ def needs_due_diligence(analysis: dict, doc: dict) -> bool:
     {"url": "", "source_type": "", "agency": "", "date": "",
      "supports": [], "primary_source": true}
   ],
-  "validation_status": "valid|invalid",
   "research_status": "complete|partial|insufficient_data",
   "due_diligence_confidence": "High|Medium|Low"
 }
 ```
+`validation_status` and `validation_errors` are NOT part of the payload the
+Stage 2 model produces — see "Clarifications" below. They are assigned
+afterward, exclusively by deterministic application code.
 
 ### Stage 2 system prompt (source priority — non-negotiable)
 ```
@@ -134,9 +139,17 @@ do not manufacture one.
   "headline": "", "bottom_line": "", "what_changed": "",
   "why_it_matters": "", "historical_significance": "",
   "what_did_not_change": "", "compliance_attention": [],
-  "watch_next": [], "confidence": "High|Medium|Low", "sources": []
+  "watch_next": [],
+  "confidence": "High|Medium|Low",
+  "sources": [
+    {"url": "", "source_type": "", "agency": "", "date": "",
+     "supports": [], "primary_source": true}
+  ]
 }
 ```
+Each `sources` entry uses the identical object shape as a Stage 2 source —
+see "Clarifications" below for the reuse-only constraint that shape exists
+to enforce.
 
 ### Stage 3 system prompt
 ```
@@ -151,6 +164,46 @@ compliance consequences, or what requires monitoring. Never convert
 "partial" research into apparent certainty. Never predict agency
 behavior beyond what precedent explicitly supports.
 ```
+
+## Clarifications (resolve ambiguities surfaced during implementation; binding)
+
+### C1. validation_status / validation_errors are never model output
+The Stage 2 model produces only the due-diligence evidence payload shown
+above. It does not produce, populate, or certify `validation_status` or
+`validation_errors` — those two fields do not appear anywhere in what the
+model is asked to return. They are validator/persistence metadata,
+assigned exclusively by deterministic application code that inspects the
+payload after the model call returns. If a model response happens to
+contain keys named `validation_status` or `validation_errors` (e.g. an
+echo of this document), those keys establish nothing and are ignored —
+only the deterministic validator's own judgment sets these fields in
+`due_diligence_records`.
+
+`research_status` remains a conceptually separate field: it is part of the
+model's payload (rule stands), and it describes evidence/research
+completeness, not structural validity. The combination
+`validation_status = valid` with `research_status = insufficient_data` is
+intentional and must remain representable: a structurally well-formed
+record that honestly reports it found no usable precedent is a successful
+run, not a validation failure.
+
+### C2. Stage 3 sources are reuse-only, never newly discovered
+Stage 3 sources use the identical structured provenance shape as Stage 2
+sources (`url`, `source_type`, `agency`, `date`, `supports`,
+`primary_source`). Stage 3 may ONLY reference or reuse source records that
+already exist, verbatim, in the validated Stage 2 evidence package for
+that alert. Stage 3 may not:
+- discover new sources,
+- invent new source records,
+- alter source provenance (URL, agency, date, or `primary_source` flag)
+  from what Stage 2 recorded,
+- introduce a URL or government document absent from validated upstream
+  evidence.
+
+This is what makes the traceability chain in rule 10 actually enforceable
+end to end: final claim → DD finding → source record → government
+document, where the source record at each step is provably the same
+object, not a re-derived or re-fetched one.
 
 ## Pipeline (enforced order, no shortcuts)
 ```
