@@ -290,6 +290,31 @@ r4 = ds.validate_stage3_record(rec4)
 check("bare-string sources -> invalid (no silent repair)", r4.validation_status == "invalid")
 
 # ---------------------------------------------------------------------------
+# 11. Spec clarification C2 — Stage 3 source reuse enforcement
+# ---------------------------------------------------------------------------
+print("\n=== 11. Stage 3 source-reuse enforcement (C2) ===")
+stage2_sources = complete_stage2_record()["sources"]
+
+errs = ds.validate_stage3_sources(complete_stage3_record()["sources"], stage2_sources)
+check("verbatim reused source passes C2 check", errs == [], str(errs))
+
+new_source = [{
+    "url": "https://example.com/invented", "source_type": "secondary",
+    "agency": "n/a", "date": "2026-01-01", "supports": [], "primary_source": False,
+}]
+errs2 = ds.validate_stage3_sources(new_source, stage2_sources)
+check("invented source fails C2 check", len(errs2) == 1, str(errs2))
+check("C2 error names the offending url", "invented" in errs2[0], str(errs2))
+
+altered_source = copy.deepcopy(stage2_sources)
+altered_source[0]["agency"] = "A Different Agency"
+errs3 = ds.validate_stage3_sources(altered_source, stage2_sources)
+check("altered provenance (same url, different agency) fails C2 check", len(errs3) == 1, str(errs3))
+
+errs4 = ds.validate_stage3_sources([], stage2_sources)
+check("empty Stage 3 sources list passes C2 check trivially", errs4 == [])
+
+# ---------------------------------------------------------------------------
 # 10. Existing Regulus behavior remains untouched
 # ---------------------------------------------------------------------------
 print("\n=== 10. Existing Regulus behavior untouched ===")
@@ -304,11 +329,11 @@ expected_hash_after_schema_fix = None  # filled in by the harness at run time be
 check("dd_schema.py imported without importing/touching regulus_v3", "rv" not in dir(), True)
 check("regulus_v3.py still present and readable", os.path.exists(regulus_path))
 print(f"    regulus_v3.py sha256 on this branch: {current_hash}")
-check("no new top-level files besides dd_schema.py and tests/ added under repo root",
+check("no unexpected top-level files added under repo root",
       set(os.listdir(repo_root)) - {".git", ".gitignore", "README.md", "regulus.py",
                                      "regulus_scraper.py", "regulus_v2.py", "regulus_v3.py",
                                      "requirements.txt", "scraper", "docs", "dd_schema.py",
-                                     "tests", "__pycache__"} == set())
+                                     "dd_pipeline.py", "tests", "__pycache__"} == set())
 
 # ---------------------------------------------------------------------------
 # Summary

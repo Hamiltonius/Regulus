@@ -2,18 +2,17 @@
 """
 dd_schema.py — Structural schemas and deterministic validators for the
 Due Diligence (DD) pipeline defined in docs/REGULUS_DD_SPEC_v1.0.md
-(commit content as of the docs/dd-spec-v1.0 branch — see NOTE at the
-bottom of this docstring).
+(now merged into main, including clarifications C1/C2).
 
-Scope of this module — first DD implementation slice, schemas + validation
-ONLY:
+Scope of this module — schemas + deterministic validation ONLY:
   - Stage 2 evidence-package structural schema and validator
   - Stage 3 executive-brief structural schema and validator
+  - Stage 3 source-reuse enforcement (spec clarification C2)
   - validation_status (structural validity) kept strictly separate from
     research_status (evidence/research completeness) per spec rule 9 and
-    the "Separate schema validity from research sufficiency" requirement.
+    clarification C1.
 
-Explicitly OUT of scope for this module/slice (do not add here):
+Explicitly OUT of scope for this module (lives in dd_pipeline.py instead):
   - the Gate (needs_due_diligence)
   - Stage 2 research/prompting (due_diligence_review)
   - Stage 3 synthesis/prompting (synthesize_final)
@@ -29,20 +28,17 @@ Hard constraints honored by this module:
     record as structurally valid or reports every structural problem it
     found; it never guesses, coerces, or fills in a "reasonable" value.
 
-NOTE on validation_status as a spec-listed field vs. validator output:
-The frozen spec's Stage 2 JSON schema lists "validation_status" as a key
-inside the evidence-package object the model would return. That is
-architecturally inconsistent with the spec's own rule that validation
-must be deterministic, non-LLM, and authoritative ("Do not use an LLM for
-validation"): a model cannot certify its own structural validity. This
-module therefore treats validation_status and validation_errors as
+Per spec clarification C1: validation_status and validation_errors are
+NEVER part of what the Stage 2 or Stage 3 model produces. They are
 OUTPUTS computed exclusively by validate_stage2_record()/
-validate_stage3_record(), never as trusted input fields. If an incoming
-record happens to carry its own "validation_status"/"validation_errors"
-keys (e.g. an upstream stub echoing the schema literally), those keys are
-ignored for validation purposes and are not required for a record to
-pass. This is flagged as a spec ambiguity in the implementation report
-rather than assumed to be obviously correct.
+validate_stage3_record(). If an incoming record happens to carry its own
+"validation_status"/"validation_errors" keys, those keys are ignored —
+only this module's own judgment sets these fields.
+
+Per spec clarification C2: Stage 3 sources must be a subset of validated
+Stage 2 sources (same object, not re-derived). validate_stage3_sources()
+below enforces this deterministically — the system prompt asking the
+model nicely is not sufficient on its own.
 """
 
 from dataclasses import dataclass, field
@@ -363,19 +359,15 @@ _STAGE3_REQUIRED = _STAGE3_STR_FIELDS + _STAGE3_LIST_FIELDS + ["confidence", "so
 
 
 def validate_stage3_record(raw: Any) -> ValidationResult:
-    """Deterministically validate a Stage 3 executive-brief record.
+    """Deterministically validate a Stage 3 executive-brief record's
+    STRUCTURE only (shape/types/enums). Per spec clarification C2, each
+    Stage 3 source item must match the same object shape as a Stage 2
+    source (url, source_type, agency, date, supports, primary_source).
 
-    AMBIGUITY (reported, not silently resolved): the frozen spec's Stage 3
-    JSON schema shows "sources": [] with no defined per-item shape, unlike
-    Stage 2 which fully specifies each source object. Rule 10 of the spec
-    ("every material DD-derived final claim must be traceable to
-    supporting evidence") requires Stage 3 sources to carry enough
-    structure to actually trace back to a source record. This validator
-    therefore requires each Stage 3 source item to match the SAME object
-    shape as Stage 2 sources (url, source_type, agency, date, supports,
-    primary_source). If that's not the intended shape, this is the one
-    call in this module that should be revisited against spec intent
-    before Stage 3 is implemented.
+    This function does NOT check that those sources actually come from a
+    given Stage 2 record — that's a cross-record check, not a structural
+    one. Use validate_stage3_sources() (below) against the specific Stage
+    2 record this Stage 3 output was synthesized from for that check.
     """
     errors: list = []
 
@@ -411,3 +403,52 @@ def validate_stage3_record(raw: Any) -> ValidationResult:
         result = _valid()
     result.confidence = confidence_out
     return result
+
+
+# ---------------------------------------------------------------------------
+# Spec clarification C2 — Stage 3 may only reuse Stage 2 sources verbatim
+# ---------------------------------------------------------------------------
+
+def _source_identity(item):
+    """A source's identity for reuse comparison is its full provenance
+    tuple, not just its URL — spec C2 says Stage 3 may not "alter source
+    provenance" either, so a Stage 3 source with Stage 2's URL but a
+    different agency/date/primary_source flag is still a violation, not a
+    harmless rewrite."""
+    if not isinstance(item, dict):
+        return None
+    return (
+        item.get("url"), item.get("source_type"), item.get("agency"),
+        item.get("date"), item.get("primary_source"),
+    )
+
+
+def validate_stage3_sources(stage3_sources, stage2_sources) -> list:
+    """Deterministically enforce spec clarification C2: every Stage 3
+    source must be identical, verbatim, to a source already present in the
+    validated Stage 2 record it was synthesized from. Returns a list of
+    error strings (empty means compliant). Does not repair or drop
+    offending entries — reports them.
+
+    This is NOT a structural check (see validate_stage3_record for that);
+    both inputs are assumed to already be lists of source-shaped dicts.
+    """
+    errors = []
+    if not isinstance(stage3_sources, list):
+        return [f"stage3_sources: expected list, got {type(stage3_sources).__name__}"]
+    if not isinstance(stage2_sources, list):
+        return [f"stage2_sources: expected list, got {type(stage2_sources).__name__}"]
+
+    allowed = {_source_identity(s) for s in stage2_sources}
+    allowed.discard(None)
+
+    for i, item in enumerate(stage3_sources):
+        identity = _source_identity(item)
+        if identity is None or identity not in allowed:
+            url = item.get("url") if isinstance(item, dict) else item
+            errors.append(
+                f"stage3_sources[{i}]: source (url={url!r}) is not present verbatim in the "
+                f"validated Stage 2 evidence — Stage 3 may only reuse existing Stage 2 sources "
+                f"(spec clarification C2), never discover, invent, or alter one"
+            )
+    return errors
