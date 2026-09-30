@@ -332,10 +332,30 @@ def due_diligence_review(doc: dict, analysis: dict, *, api_key: Optional[str] = 
                           call_stage2: Optional[Callable[[dict, dict, str], dict]] = None) -> dict:
     """Run Stage 2. Thin wrapper so run_due_diligence's retry logic has one
     call site regardless of whether it's hitting the real API or a test
-    stub."""
+    stub.
+
+    Also applies one piece of deterministic post-processing to whatever
+    Stage 2 returns, before ANY caller sees it -- persistence, Stage 3
+    (which receives this same dict as its dd_record), and the acceptance
+    runner's SOURCES USED summary all read the result of this function,
+    so this is the single choke point where the fix applies everywhere
+    at once: each source's primary_source is normalized via
+    dd_schema.normalize_sources_primary (a conservative, domain-based
+    allowlist check -- see that function's docstring), never the model's
+    own primary_source claim on its own. This makes no second model call,
+    makes no network call, and does not touch Stage 2's prompt, schema,
+    or parsing -- it only replaces one boolean per source, on the same
+    object shape, after the real call already returned. A result that
+    isn't a dict, or whose "sources" isn't a list, is returned exactly
+    as received -- structural validation of that is
+    validate_stage2_record's job, not this wrapper's."""
     api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     caller = call_stage2 or call_anthropic_stage2
-    return caller(doc, analysis, api_key)
+    result = caller(doc, analysis, api_key)
+    if isinstance(result, dict) and isinstance(result.get("sources"), list):
+        result = dict(result)
+        result["sources"] = schema.normalize_sources_primary(result["sources"])
+    return result
 
 
 # ---------------------------------------------------------------------------

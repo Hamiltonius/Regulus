@@ -41,6 +41,8 @@ below enforces this deterministically — the system prompt asking the
 model nicely is not sufficient on its own.
 """
 
+import re
+import urllib.parse
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -452,3 +454,172 @@ def validate_stage3_sources(stage3_sources, stage2_sources) -> list:
                 f"(spec clarification C2), never discover, invent, or alter one"
             )
     return errors
+
+
+# ---------------------------------------------------------------------------
+# Post go-live audit hardening (first successful live Syria run, commit
+# c41fd91, document_number=2026-18918): two deterministic provenance
+# checks found by manual audit of that run's diagnostic. Both are pure
+# functions over plain dicts, per this module's existing constraints --
+# no LLM calls, no network calls, no database access. Neither weakens,
+# bypasses, or replaces spec clarification C2 above, which remains the
+# sole authority on Stage 3 source reuse.
+# ---------------------------------------------------------------------------
+
+# --- Defect 1: Federal Register / GovInfo source identity -----------------
+
+# Domains whose URLs are expected to encode a Federal Register document
+# number directly in the path (federalregister.gov/documents/.../<num>/...,
+# govinfo.gov's FR package .../pdf/<num>.pdf or .../html/<num>.htm).
+_FR_IDENTITY_DOMAINS = ("federalregister.gov", "govinfo.gov")
+_FR_DOCUMENT_NUMBER_RE = re.compile(r"\b(\d{4}-\d{4,6})\b")
+
+
+def _hostname(url: Any) -> Optional[str]:
+    """Lowercased hostname of a URL, or None if unparseable/not a
+    non-empty string. Local to this module (no dependency on
+    scripts/dd_syria_acceptance_test.py's own copy) and deliberately
+    simple -- callers below compare against a domain or "any subdomain
+    of" a domain, so a leading 'www.' needs no special-casing here."""
+    if not isinstance(url, str) or not url:
+        return None
+    try:
+        netloc = urllib.parse.urlparse(url).netloc
+    except ValueError:
+        return None
+    host = netloc.split("@")[-1].split(":")[0].lower()
+    return host or None
+
+
+def _domain_or_subdomain(hostname: str, domain: str) -> bool:
+    return hostname == domain or hostname.endswith("." + domain)
+
+
+def extract_federal_register_document_number(url: Any) -> Optional[str]:
+    """Best-effort, deterministic extraction of a Federal Register
+    document number (e.g. '2026-18918') encoded in a federalregister.gov
+    or govinfo.gov URL. Returns None for any other domain -- this
+    function never guesses an FR-shaped number out of an unrelated
+    host's URL, which is what keeps it from ever flagging a non-FR
+    source (e.g. state.gov, legal500.com) -- or if the URL doesn't
+    actually contain that pattern."""
+    hostname = _hostname(url)
+    if hostname is None or not any(
+        _domain_or_subdomain(hostname, d) for d in _FR_IDENTITY_DOMAINS
+    ):
+        return None
+    m = _FR_DOCUMENT_NUMBER_RE.search(url)
+    return m.group(1) if m else None
+
+
+def validate_source_identity(source: Any, target_document_number: Any) -> Optional[str]:
+    """Deterministically check ONE Stage 2 source against the document
+    it is claimed to be evidence for. Only checks a source that BOTH:
+
+      (a) lists "current_event" in its "supports" array -- i.e. it is
+          presented as evidence for the CURRENT target document, not
+          historical precedent, and
+      (b) has a URL on a Federal Register/GovInfo identity domain that
+          actually encodes an FR document number
+
+    A historical-precedent source (e.g. supports=["historical_context"])
+    with a different, older document number is legitimate evidence and
+    is never flagged by this function -- it only catches a
+    current-event-supporting source whose OWN embedded document number
+    conflicts with the document it's claimed to support. Returns an
+    error string on conflict, None otherwise (including when
+    target_document_number is falsy/unknown -- this never invents a
+    target to compare against, it simply skips the check)."""
+    if not isinstance(source, dict) or not target_document_number:
+        return None
+    supports = source.get("supports")
+    if not isinstance(supports, list) or "current_event" not in supports:
+        return None
+    encoded = extract_federal_register_document_number(source.get("url"))
+    if encoded is None or encoded == target_document_number:
+        return None
+    return (
+        f"source (url={source.get('url')!r}) supports 'current_event' but its encoded "
+        f"Federal Register/GovInfo document number ({encoded!r}) does not match the "
+        f"target document_number ({target_document_number!r})"
+    )
+
+
+def validate_stage2_source_identities(sources: Any, target_document_number: Any) -> list:
+    """Run validate_source_identity() across an entire Stage 2 sources
+    array. Returns a list of error strings (empty means every
+    current-event-supporting source's encoded FR/GovInfo identity, where
+    present, agrees with the target document). Reporting only -- mirrors
+    validate_stage3_sources() above in shape and never drops, repairs, or
+    alters any source itself."""
+    errors: list = []
+    if not isinstance(sources, list):
+        return errors
+    for i, s in enumerate(sources):
+        err = validate_source_identity(s, target_document_number)
+        if err:
+            errors.append(f"sources[{i}]: {err}")
+    return errors
+
+
+# --- Defect 2: primary-source domain normalization -------------------------
+
+# Conservative allowlist of U.S. government domains actually relevant to
+# Regulus's export-control/sanctions beat. A model-supplied
+# primary_source=true is NEVER sufficient on its own (see
+# classify_primary_source) -- only a domain on, or a subdomain of, this
+# list can be PRIMARY. Deliberately an allowlist/domain rule, not a
+# reputation or authority-tier score: a domain either qualifies or it
+# doesn't, with no LLM, no network call, and no database involved.
+_PRIMARY_SOURCE_DOMAINS = frozenset({
+    "federalregister.gov",
+    "govinfo.gov",
+    "uscode.house.gov",
+    "congress.gov",
+    "state.gov",
+    "bis.gov",
+    "commerce.gov",
+    "treasury.gov",
+    "ofac.treasury.gov",
+    "whitehouse.gov",
+})
+
+
+def classify_primary_source(url: Any) -> bool:
+    """Deterministically decide whether a URL's domain qualifies as a
+    PRIMARY (issuing-government) source, independent of whatever the
+    model itself claimed. A domain qualifies only if its hostname is
+    exactly one of _PRIMARY_SOURCE_DOMAINS or a subdomain of one of them
+    (e.g. 'www.state.gov' and 'www.federalregister.gov' both qualify via
+    'state.gov'/'federalregister.gov'). Every mirror, secondary-analysis,
+    or non-government site -- law.cornell.edu, thefederalregister.org,
+    fdassociates.net, goodwinlaw.com, legal500.com, unblocksyria.com,
+    zyphe.com, or anything else not on the list -- returns False,
+    regardless of source_type, agency, or what the model itself returned
+    for primary_source."""
+    hostname = _hostname(url)
+    if hostname is None:
+        return False
+    return any(_domain_or_subdomain(hostname, d) for d in _PRIMARY_SOURCE_DOMAINS)
+
+
+def normalize_source_primary(source: Any) -> Any:
+    """Return a NEW source dict with primary_source replaced by the
+    trusted, domain-based classification from classify_primary_source()
+    -- the model's own primary_source value is never trusted on its own.
+    Every other key is preserved unchanged (same object shape the schema
+    and C2 expect). Non-dict input is returned unchanged (nothing to
+    normalize; never raises)."""
+    if not isinstance(source, dict):
+        return source
+    normalized = dict(source)
+    normalized["primary_source"] = classify_primary_source(source.get("url"))
+    return normalized
+
+
+def normalize_sources_primary(sources: Any) -> Any:
+    """Map normalize_source_primary() across a whole sources array,
+    preserving order and length. Non-list input is returned unchanged."""
+    if not isinstance(sources, list):
+        return sources
+    return [normalize_source_primary(s) for s in sources]

@@ -665,6 +665,26 @@ def main() -> int:
         for s in (stage2_raw.get("sources") or []) if isinstance(stage2_raw, dict)
     ]
 
+    # Informational only (post go-live audit hardening, commit c41fd91):
+    # flags any current-event-supporting source whose own embedded
+    # Federal Register/GovInfo document number conflicts with THIS run's
+    # target document_number (e.g. a source citing 2026-18984 offered as
+    # evidence for 2026-18918). Deterministic, no LLM, no new web calls.
+    # Never alters validation_status, the gate decision, or what gets
+    # persisted -- same reporting-only relationship to the pipeline that
+    # ungrounded_claims_check (below) already has.
+    report["source_identity_validation"] = {
+        "note": (
+            "informational only -- does not affect validation_status, the gate, "
+            "or persistence; flags a current-event source whose encoded FR/GovInfo "
+            "document number conflicts with this run's target document_number"
+        ),
+        "errors": schema.validate_stage2_source_identities(
+            stage2_raw.get("sources", []) if isinstance(stage2_raw, dict) else [],
+            document_number,
+        ),
+    }
+
     dd_id = dd_pipeline.persist_due_diligence(
         conn, document_number=document_number, doc_hash=doc_hash, dd_json_raw=stage2_raw,
         validation_status=stage2_validation.validation_status,
