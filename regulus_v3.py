@@ -197,6 +197,17 @@ def get_db():
     conn.commit()
     _ensure_column(conn, "alerts", "eccn_regex_matches", "TEXT")
     _ensure_column(conn, "alerts", "eccn_regex_source", "TEXT")
+    # Reconciliation migration: these four columns are written by main()'s
+    # INSERT (source_retrieved_at/watch_match unconditionally, analysis_model/
+    # analysis_generated_at when Stage 1 analysis succeeds) but were never
+    # declared in CREATE TABLE or migrated here — a fresh database could not
+    # reproduce the schema the running production database already has.
+    # Additive only, same pattern as above; does not touch existing columns
+    # or data.
+    _ensure_column(conn, "alerts", "source_retrieved_at", "TEXT")
+    _ensure_column(conn, "alerts", "watch_match", "TEXT")
+    _ensure_column(conn, "alerts", "analysis_model", "TEXT")
+    _ensure_column(conn, "alerts", "analysis_generated_at", "TEXT")
     conn.commit()
     return conn
 
