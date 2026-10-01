@@ -77,7 +77,13 @@ SYRIA_DOC = {
 }
 
 CORRECTION_ANALYSIS = {
-    "title": CORRECTION_DOC["title"], "confidence": "High", "change_type": "correction",
+    # "other": a confidently-classified, non-high-impact action -- the
+    # correct controlled-vocabulary value for a routine correction notice
+    # under the Stage 1 change_type contract (claim/evidence hardening
+    # round 3). The un-controlled free-text value "correction" used here
+    # previously would now be INVALID and fail safe to DD escalation,
+    # which would wrongly break this negative control.
+    "title": CORRECTION_DOC["title"], "confidence": "High", "change_type": "other",
     "countries": [], "unresolved_questions": [], "summary": "A citation correction.",
     "authority": [], "entities": [], "eccns": [], "ear_sections": [],
     "licensing_impact": "None", "defense_impact": "None", "remaining_controls": "n/a",

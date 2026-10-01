@@ -102,10 +102,63 @@ STAGE3_MAX_ATTEMPTS = 2
 # ---------------------------------------------------------------------------
 
 HIGH_CONTEXT_JURISDICTIONS = {"syria", "iran", "cuba", "north korea", "venezuela", "russia"}
+
+# Stage 1 change_type contract (Gate interface hardening). Stage 1 was
+# previously asked for `change_type` as unconstrained free text while this
+# module's HIGH_IMPACT_ACTIONS matched against exact controlled strings
+# Stage 1 was never told about -- CHANGE_TYPE_VALUES is the single source
+# of truth for the controlled vocabulary, shared by regulus_v3.py's
+# ANALYSIS_SCHEMA_PROMPT (which renders this set into the Stage 1 prompt)
+# and by is_valid_change_type()/needs_due_diligence() below. Existing
+# HIGH_IMPACT_ACTIONS values are preserved unchanged; "other" and
+# "unknown" are added as explicit, legitimate non-high-impact and
+# fail-safe values respectively -- never silently guessed/normalized into
+# one of the substantive categories.
+CHANGE_TYPE_VALUES = {
+    "entity_list_addition", "entity_list_removal", "license_policy_change",
+    "country_group_change", "ccl_amendment", "sanctions_waiver",
+    "sanctions_regime_imposed", "sanctions_regime_terminated",
+    "arms_embargo_imposed", "arms_embargo_removed",
+    "terrorism_designation", "terrorism_designation_rescinded",
+    "other", "unknown",
+}
+
+# Preserves all 6 pre-existing values unchanged, plus the 6 new
+# categories this round adds. "other" and "unknown" are deliberately
+# excluded -- "other" is a confidently-classified non-high-impact action
+# (must not independently escalate), and "unknown" is handled by the
+# explicit fail-safe check in needs_due_diligence() below, not by treating
+# it as if it were itself a substantive high-impact action.
 HIGH_IMPACT_ACTIONS = {
     "entity_list_addition", "entity_list_removal", "license_policy_change",
     "country_group_change", "ccl_amendment", "sanctions_waiver",
+    "sanctions_regime_imposed", "sanctions_regime_terminated",
+    "arms_embargo_imposed", "arms_embargo_removed",
+    "terrorism_designation", "terrorism_designation_rescinded",
 }
+
+
+def is_valid_change_type(change_type: Any) -> bool:
+    """True iff change_type is a string present in CHANGE_TYPE_VALUES.
+    Pure, deterministic, no fuzzy/partial matching -- an unrecognized
+    string is simply invalid, never guessed into the nearest-looking
+    controlled value."""
+    return isinstance(change_type, str) and change_type in CHANGE_TYPE_VALUES
+
+
+def change_type_requires_failsafe_escalation(change_type: Any) -> bool:
+    """Implements the approved failure policy for the Stage 1 change_type
+    contract: a classification the Gate cannot trust escalates to DD
+    rather than being dropped, silently normalized, or treated as
+    routine. True when change_type is missing, not a string, or outside
+    the controlled vocabulary (invalid) -- or when it IS the valid,
+    explicit "unknown" value (Stage 1 itself could not classify the
+    action reliably). False for every other valid controlled value,
+    including "other" (a confidently-classified non-high-impact action,
+    which must not independently trigger DD)."""
+    if not is_valid_change_type(change_type):
+        return True
+    return change_type == "unknown"
 
 
 def needs_due_diligence(analysis: dict, doc: dict) -> bool:
@@ -116,13 +169,30 @@ def needs_due_diligence(analysis: dict, doc: dict) -> bool:
     jurisdiction or change_type that's plainly present in the source)
     cannot by itself prevent an otherwise-significant document from
     escalating.
+
+    change_type contract (added alongside the existing four OR-branches,
+    none of which are redesigned): an invalid or "unknown" change_type
+    fails safe to escalation via change_type_requires_failsafe_escalation
+    -- logged here, since this is the deterministic point where the
+    Stage 1 -> Gate contract is actually enforced. This never mutates or
+    drops `analysis`; the full Stage 1 analysis dict is untouched and
+    still flows to persistence/email/PDF exactly as before.
     """
     analysis = analysis or {}
     doc = doc or {}
 
     if analysis.get("confidence") != "High":
         return True
-    if analysis.get("change_type") in HIGH_IMPACT_ACTIONS:
+    change_type = analysis.get("change_type")
+    if change_type_requires_failsafe_escalation(change_type):
+        log.warning(
+            "Stage 1 change_type failed the controlled-vocabulary contract "
+            "(value=%r) -- failing safe to DD escalation rather than treating "
+            "it as routine or dropping the alert",
+            change_type,
+        )
+        return True
+    if change_type in HIGH_IMPACT_ACTIONS:
         return True
     countries = [str(c).lower() for c in (analysis.get("countries") or [])]
     if any(j in countries for j in HIGH_CONTEXT_JURISDICTIONS):

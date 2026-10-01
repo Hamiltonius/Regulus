@@ -132,7 +132,13 @@ def correction_notice_case():
         "html_url": "https://www.federalregister.gov/d/2026-19005",
     }
     analysis = {
-        "confidence": "High", "change_type": "correction", "countries": [],
+        # "other": a confidently-classified, non-high-impact action -- the
+        # correct controlled-vocabulary value for a routine correction
+        # notice under the Stage 1 change_type contract (claim/evidence
+        # hardening round 3). The free-text "correction" used here
+        # previously would now be INVALID and fail safe to DD escalation,
+        # which would wrongly break this negative control.
+        "confidence": "High", "change_type": "other", "countries": [],
         "unresolved_questions": [],
     }
     return doc, analysis

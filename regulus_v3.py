@@ -128,7 +128,7 @@ SCORE_DIGEST_MAX = 8       # store, low-priority (not emailed by this script)
 # three digits, optional dotted sub-paragraph.
 ECCN_PATTERN = re.compile(r'\b[0-9][A-Z][0-9]{3}(?:\.[a-z0-9]+)?\b')
 
-ANALYSIS_SCHEMA_PROMPT = """You are a U.S. export-controls regulatory analyst supporting a
+ANALYSIS_SCHEMA_PROMPT = f"""You are a U.S. export-controls regulatory analyst supporting a
 defense/aerospace compliance organization. Analyze the supplied government document.
 
 Rules:
@@ -139,9 +139,27 @@ Rules:
 - Every list field (authority, countries, entities, eccns, ear_sections,
   recommended_actions) must contain plain strings only — never objects/dicts.
 
+CHANGE_TYPE: `change_type` MUST be exactly one value from this controlled
+list — no other text, phrasing, or variation is permitted:
+
+{", ".join(sorted(dd_pipeline.CHANGE_TYPE_VALUES))}
+
+Boundary guidance for the categories most often confused:
+- sanctions_waiver: material sanctions relief that does NOT terminate
+  the broader sanctions regime (e.g. a waiver, general license, or
+  partial lift of specific restrictions).
+- sanctions_regime_terminated: termination/rescission/removal of the
+  sanctions regime itself, or of its remaining major restrictions —
+  broader than a single waiver.
+- other: you confidently understand what action the document takes, but
+  it does not fit any of the other controlled values above.
+- unknown: the action cannot be reliably classified from the source text.
+This field classifies WHAT ACTION the document takes — it is not a
+judgment of how important that action is.
+
 Return ONLY valid JSON, no prose, no markdown fences, matching exactly this shape:
 
-{
+{{
   "title": "",
   "agency": [],
   "publication_date": "",
@@ -159,7 +177,7 @@ Return ONLY valid JSON, no prose, no markdown fences, matching exactly this shap
   "recommended_actions": [],
   "primary_sources": [],
   "confidence": "High | Medium | Low"
-}
+}}
 """
 
 # ---------------------------------------------------------------------------
