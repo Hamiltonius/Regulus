@@ -167,6 +167,20 @@ manufacture one.
 Do not infer any fact not directly supported by a source you actually
 found. Every list field must contain plain strings, never objects.
 
+EFFECTIVE DATE: report current_event.effective_date exactly as the
+source document states it. If the source explicitly states an effective
+date (e.g. "effective September 16, 2026"), use that date verbatim and
+set current_event.effective_date_basis to "stated" — never substitute a
+date you calculated yourself (e.g. from a notice period) when an
+explicit stated date is available. Only set effective_date_basis to
+"calculated" when no explicit date was stated and you derived one from
+something else (e.g. a notice period or a "N days after publication"
+rule) — and say so plainly in current_event.action or open_questions,
+since a calculated date is an inference, not a fact. If neither a stated
+nor a reliably calculable date exists, set effective_date_basis to
+"uncertain" and leave effective_date as your best-available indication
+of that uncertainty rather than asserting a specific date as operative.
+
 Return ONLY valid JSON, no prose, no markdown fences, matching exactly
 this shape:
 
@@ -174,6 +188,7 @@ this shape:
   "research_question": "",
   "current_event": {
     "action": "", "date": "", "effective_date": "",
+    "effective_date_basis": "stated|calculated|uncertain",
     "agency": [], "authority": [], "jurisdictions": [],
     "entities": [], "controls_affected": []
   },
@@ -380,6 +395,21 @@ detail or restate the full DD evidence package — compress it. Preserve
 material uncertainty. Do not introduce new factual claims beyond what
 the supplied evidence supports.
 
+OPEN QUESTIONS: if the supplied evidence's open_questions lists
+something as unresolved (e.g. an eligibility or authorization question),
+do not assert a categorical conclusion that depends on that unresolved
+point. Either preserve the uncertainty explicitly (e.g. "X remains
+unresolved pending Y") or omit the claim — never state as settled fact
+something the evidence itself flags as still open.
+
+COMPARATIVE/SUPERLATIVE LANGUAGE: never claim a development is the
+first, only, fastest, largest, or otherwise most extreme instance ever
+observed (e.g. "first ever", "no prior example", "unprecedented",
+"fastest on record") unless the supplied evidence itself explicitly
+states this as an established fact. Evidence of several prior actions
+does not establish that no other, unexamined instance exists — do not
+reach for this kind of exhaustive claim as a way to add emphasis.
+
 FIELD LENGTH LIMITS — these are MAXIMUMS, not targets. Use less text
 whenever less text is sufficient; a shorter, denser answer is always
 preferred over a longer one that merely fills the ceiling:
@@ -501,11 +531,58 @@ def call_anthropic_stage3(analysis: dict, dd_record: dict, api_key: str) -> dict
         ) from e
 
 
+class Stage3ProhibitedLanguageError(ValueError):
+    """Raised by synthesize_final() when Stage 3's output contains
+    exhaustive/comparative superlative language from the closed phrase
+    list enforced by dd_schema.find_prohibited_comparative_claims() (e.g.
+    "first ever", "no prior", "unprecedented"). A plain ValueError
+    subclass, sibling to Stage2JSONDecodeError/Stage3JSONDecodeError, so
+    it is caught by the SAME existing generic `except Exception as e:`
+    retry branches in run_due_diligence's Stage 3 loop and in the
+    acceptance script -- no new retry mechanism was added anywhere.
+
+    Attributes:
+      comparative_errors  list[str] of the specific violations found
+                           (dd_schema.find_prohibited_comparative_claims's
+                           own error strings)
+      stage3_raw           the full Stage 3 record that triggered this,
+                           preserved for diagnostics (no secrets -- this
+                           is response-side synthesized text, not request
+                           data)
+    """
+
+    def __init__(self, comparative_errors: list, *, stage3_raw: dict):
+        message = "; ".join(comparative_errors)
+        super().__init__(f"Stage 3 output contains prohibited comparative language: {message}")
+        self.comparative_errors = list(comparative_errors)
+        self.stage3_raw = stage3_raw
+
+
 def synthesize_final(analysis: dict, dd_record: dict, *, api_key: Optional[str] = None,
                       call_stage3: Optional[Callable[[dict, dict, str], dict]] = None) -> dict:
+    """Run Stage 3. Thin wrapper mirroring due_diligence_review's role for
+    Stage 2: this is the single choke point every caller (production
+    run_due_diligence, the acceptance script) goes through, so the
+    deterministic prohibited-comparative-language check below applies
+    everywhere a Stage 3 result is produced, without touching
+    call_anthropic_stage3 itself or duplicating the check at each call
+    site.
+
+    Raises Stage3ProhibitedLanguageError (a ValueError subclass) when the
+    result contains closed-list exhaustive/comparative language (see
+    dd_schema.find_prohibited_comparative_claims) -- this makes the
+    violation BLOCKING via the existing generic exception-handling retry
+    loops, with no new retry plumbing. A result that isn't a dict is
+    returned exactly as received; structural validation of that is
+    validate_stage3_record's job, not this wrapper's."""
     api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     caller = call_stage3 or call_anthropic_stage3
-    return caller(analysis, dd_record, api_key)
+    result = caller(analysis, dd_record, api_key)
+    if isinstance(result, dict):
+        comparative_errors = schema.find_prohibited_comparative_claims(result)
+        if comparative_errors:
+            raise Stage3ProhibitedLanguageError(comparative_errors, stage3_raw=result)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -711,7 +788,13 @@ def run_due_diligence(doc: dict, analysis: dict, conn, doc_hash: str, document_n
             failure_reason="stage2_call_failed",
         )
 
-    stage2_result = schema.validate_stage2_record(stage2_raw)
+    # Source-identity validation is BLOCKING here (claim/evidence/inference
+    # hardening v2): a current-event-supporting source whose encoded
+    # Federal Register/GovInfo document number conflicts with this
+    # document's own document_number now makes Stage 2 invalid, not merely
+    # flagged. Historical sources are unaffected -- see
+    # validate_stage2_record_and_identity's docstring.
+    stage2_result = schema.validate_stage2_record_and_identity(stage2_raw, document_number)
     dd_id = persist_due_diligence(
         conn, document_number=document_number, doc_hash=doc_hash, dd_json_raw=stage2_raw,
         validation_status=stage2_result.validation_status,

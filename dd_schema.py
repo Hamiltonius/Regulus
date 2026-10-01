@@ -58,6 +58,19 @@ TREND_CLASSIFICATIONS = {
     "consistent", "escalation", "relaxation", "reversal", "novel", "insufficient_data",
 }
 
+# Optional Stage 2 current_event field (claim/evidence/inference hardening
+# v2). Three values, per explicit requirement:
+#   "stated"     -- the source document explicitly states the effective
+#                    date (e.g. "effective September 16, 2026").
+#   "calculated" -- no explicit date was stated; the date was derived from
+#                    something else (e.g. a notice period, a "N days after
+#                    publication" rule).
+#   "uncertain"  -- neither of the above could be established.
+# NOT added to any required-keys list -- legacy records without this field
+# remain structurally valid (see validate_stage2_record's current_event
+# block below).
+EFFECTIVE_DATE_BASIS_VALUES = {"stated", "calculated", "uncertain"}
+
 
 # ---------------------------------------------------------------------------
 # Result type
@@ -235,6 +248,13 @@ def validate_stage2_record(raw: Any) -> ValidationResult:
         for f_ in _CURRENT_EVENT_LIST_FIELDS:
             if f_ in ce:
                 _check_list_of_str(ce[f_], f"root.current_event.{f_}", errors)
+        # effective_date_basis is OPTIONAL -- deliberately NOT added to
+        # _CURRENT_EVENT_STR_FIELDS/the current_event required-keys list,
+        # so legacy records without it remain structurally valid. Checked
+        # as an enum only when present.
+        if "effective_date_basis" in ce:
+            _check_enum(ce["effective_date_basis"], EFFECTIVE_DATE_BASIS_VALUES,
+                        "root.current_event.effective_date_basis", errors)
 
     # historical_context
     if "historical_context" in raw and _check_dict(raw["historical_context"], "root.historical_context", errors):
@@ -623,3 +643,250 @@ def normalize_sources_primary(sources: Any) -> Any:
     if not isinstance(sources, list):
         return sources
     return [normalize_source_primary(s) for s in sources]
+
+
+# ---------------------------------------------------------------------------
+# Claim/Evidence/Inference hardening v2 (second post go-live audit round,
+# golden Syria diagnostic, document_number=2026-18918). Three additions,
+# deliberately kept in the categories approved by the user:
+#
+#   HARD (blocking):
+#     - validate_stage2_record_and_identity() -- promotes the previously
+#       informational source-identity check (validate_stage2_source_identities,
+#       above) to a blocking structural-validity failure. Historical
+#       sources are unaffected -- see validate_source_identity's own
+#       docstring; this combinator changes only WHERE identity errors
+#       land, never WHICH sources are checked.
+#     - find_prohibited_comparative_claims() -- a closed, fixed phrase
+#       list of exhaustive/comparative superlative claims
+#       ("first ever", "unprecedented", etc.) that Stage 3 must never
+#       use, regardless of how much evidence backs them. Deliberately
+#       NOT an evidence-count/breadth heuristic (explicitly rejected --
+#       no finite count of examples proves "no prior precedent exists").
+#       Wired into dd_pipeline.synthesize_final(), which raises
+#       Stage3ProhibitedLanguageError on violation -- caught by the
+#       existing generic retry loops, no new retry mechanism.
+#
+#   SOFT/advisory (never blocking):
+#     - check_open_question_resolution() -- a simple topic-overlap +
+#       hedge-phrase-presence heuristic flagging candidate Stage 3 text
+#       that may have overstepped an open question Stage 2 left
+#       unresolved. Explicitly NOT a semantic-equivalence system; never
+#       changes validation_status, confidence, or persistence.
+#
+# All three are pure functions over plain dicts -- no LLM calls, no
+# network calls, no database access -- matching this module's existing
+# constraints. None of them modify validate_stage2_record,
+# validate_stage3_record, or validate_stage3_sources (C2), which remain
+# byte-for-byte unchanged and independently callable.
+# ---------------------------------------------------------------------------
+
+def validate_stage2_record_and_identity(raw: Any, target_document_number: Any) -> ValidationResult:
+    """Combinator: structural validation (validate_stage2_record) PLUS
+    source-identity validation (validate_stage2_source_identities),
+    promoted here to BLOCKING -- a current-event-supporting source whose
+    encoded Federal Register/GovInfo document number conflicts with the
+    target document now makes the overall record invalid, not merely
+    flagged informationally.
+
+    Historical sources are unaffected by this promotion: identity errors
+    only ever come from validate_source_identity, which only ever
+    inspects sources whose "supports" array includes "current_event" (see
+    that function's docstring above) -- a historical-precedent source
+    with an older, different document number was never flagged before and
+    is still never flagged now. This combinator changes WHERE identity
+    errors land (now contribute to validation_status), never WHICH
+    sources are checked.
+
+    research_status / due_diligence_confidence are preserved exactly as
+    validate_stage2_record computed them -- per ValidationResult's own
+    docstring, these are echoed independent of other structural errors,
+    and identity errors (being structural, not research-completeness
+    related) do not change that echo.
+
+    validate_stage2_record and validate_stage2_source_identities
+    themselves remain byte-for-byte unchanged by this function and stay
+    independently callable (e.g. the acceptance script's own
+    source_identity_validation report section can still run the bare,
+    informational check if it wants to)."""
+    base = validate_stage2_record(raw)
+    sources = raw.get("sources") if isinstance(raw, dict) else None
+    identity_errors = validate_stage2_source_identities(sources, target_document_number)
+
+    all_errors = list(base.validation_errors) + list(identity_errors)
+    if all_errors:
+        result = _invalid(all_errors)
+    else:
+        result = _valid()
+    result.research_status = base.research_status
+    result.due_diligence_confidence = base.due_diligence_confidence
+    return result
+
+
+# --- Prohibited exhaustive/comparative language (Stage 3, BLOCKING) -------
+
+# Closed, fixed phrase list only -- never an evidence-count/breadth
+# heuristic. Deliberately excludes bare "first"/"only"/"no": only these
+# specific multi-word phrases are flagged, so ordinary chronology ("the
+# first action taken in 2026") and ordinary regulatory scope language
+# ("only affects Syria-related transactions") are never caught by this.
+_PROHIBITED_COMPARATIVE_PATTERNS = [
+    re.compile(r"\bfirst\s+ever\b", re.IGNORECASE),
+    re.compile(r"\bfirst\s+time\s+ever\b", re.IGNORECASE),
+    re.compile(r"\bno\s+prior\b", re.IGNORECASE),
+    re.compile(r"\bno\s+previous\b", re.IGNORECASE),
+    re.compile(r"\bnever\s+before\b", re.IGNORECASE),
+    re.compile(r"\bunprecedented\b", re.IGNORECASE),
+    re.compile(r"\bfastest\b", re.IGNORECASE),
+    re.compile(r"\bearliest\s+ever\b", re.IGNORECASE),
+    re.compile(r"\blatest\s+ever\b", re.IGNORECASE),
+    re.compile(r"\blargest\s+ever\b", re.IGNORECASE),
+    re.compile(r"\bsmallest\s+ever\b", re.IGNORECASE),
+]
+
+
+def find_prohibited_comparative_claims(stage3_record: Any) -> list:
+    """Deterministically scan a Stage 3 record's text fields for
+    exhaustive/comparative superlative language from the closed phrase
+    list above (e.g. "first ever", "no prior", "unprecedented",
+    "fastest"). These are claims that no finite amount of evidence can
+    actually support, so this is a lexical presence check, never an
+    evidence-count/breadth heuristic.
+
+    Scans every _STAGE3_STR_FIELDS value and every string item of every
+    _STAGE3_LIST_FIELDS list. Returns a list of error strings (empty
+    means compliant). Pure function -- no LLM/network/DB access. Non-dict
+    input returns no errors (nothing to scan)."""
+    errors: list = []
+    if not isinstance(stage3_record, dict):
+        return errors
+
+    texts = []
+    for f_ in _STAGE3_STR_FIELDS:
+        v = stage3_record.get(f_)
+        if isinstance(v, str):
+            texts.append((f_, v))
+    for f_ in _STAGE3_LIST_FIELDS:
+        v = stage3_record.get(f_)
+        if isinstance(v, list):
+            for i, item in enumerate(v):
+                if isinstance(item, str):
+                    texts.append((f"{f_}[{i}]", item))
+
+    for field_name, text in texts:
+        for pattern in _PROHIBITED_COMPARATIVE_PATTERNS:
+            m = pattern.search(text)
+            if m:
+                errors.append(
+                    f"root.{field_name}: contains prohibited exhaustive/comparative "
+                    f"language {m.group(0)!r} -- no finite amount of evidence "
+                    f"supports a claim of this form; rephrase without it"
+                )
+    return errors
+
+
+# --- Open-question resolution (Stage 2 vs Stage 3, ADVISORY ONLY) ---------
+
+_STOPWORDS = frozenset({
+    "a", "an", "the", "and", "or", "but", "of", "to", "in", "on", "for",
+    "is", "are", "was", "were", "be", "been", "being", "this", "that",
+    "these", "those", "with", "as", "at", "by", "from", "it", "its",
+    "has", "have", "had", "can", "cannot", "will", "would", "could",
+    "should", "not", "no", "until", "unless", "both", "whether", "any",
+    "all", "than", "into", "such", "may", "must", "also",
+})
+
+# Fixed set of hedge/uncertainty phrases. Case-insensitive substring
+# match against Stage 3 text -- presence of any of these is treated as
+# the text still acknowledging the open question rather than resolving
+# it with unsupported certainty.
+_UNCERTAINTY_PHRASES = [
+    "unclear", "unresolved", "unknown", "remains to be seen", "uncertain",
+    "not yet clear", "not yet known", "pending", "has not been",
+    "have not been", "no indication", "no confirmation", "awaiting",
+    "to be determined", "tbd", "not confirmed", "not resolved",
+    "open question", "still being determined",
+]
+
+
+def _content_words(text: Any) -> set:
+    """Lowercased alphanumeric tokens with stopwords and very short words
+    removed. Deliberately simple -- this is a topic-overlap heuristic,
+    not an NLP pipeline."""
+    if not isinstance(text, str):
+        return set()
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    return {w for w in words if w not in _STOPWORDS and len(w) > 2}
+
+
+def check_open_question_resolution(open_questions: Any, stage3_record: Any) -> dict:
+    """ADVISORY-ONLY (never blocking): for each Stage 2 open_questions
+    entry, look for Stage 3 text that shares substantial topic vocabulary
+    with that question (at least two overlapping content words) AND
+    contains none of the fixed hedge/uncertainty phrases above. Such a
+    pairing is flagged as a candidate for human review -- it is NOT proof
+    Stage 3 improperly resolved or contradicted the open question (Stage 3
+    may simply be discussing the same topic in a way that happens to
+    share vocabulary), and an unflagged pairing is NOT proof Stage 3
+    handled it correctly either.
+
+    This is deliberately a simple topic-overlap + hedge-phrase-presence
+    check, not a complex keyword-overlap system pretending to prove
+    semantic consistency. Callers MUST treat this as reporting-only: it
+    never changes validation_status, confidence, or persistence, and
+    dd_pipeline.py never wires it into any retry/failure path.
+
+    Always returns {"flagged": [...], "method": "...", "caveat": "..."},
+    with "flagged" simply empty on malformed input."""
+    result = {
+        "flagged": [],
+        "method": (
+            "topic-word overlap (>=2 shared content words) between each Stage 2 "
+            "open_questions entry and each Stage 3 text field, flagged only when "
+            "the overlapping Stage 3 text contains no hedge/uncertainty phrase "
+            "from a fixed list"
+        ),
+        "caveat": (
+            "ADVISORY ONLY -- a simple lexical heuristic, not a semantic-equivalence "
+            "check. A flagged pair is not proof Stage 3 improperly resolved or "
+            "contradicted the open question; an unflagged pair is not proof it "
+            "didn't. Never blocking; never affects validation_status, confidence, "
+            "or persistence."
+        ),
+    }
+    if not isinstance(open_questions, list) or not isinstance(stage3_record, dict):
+        return result
+
+    texts = []
+    for f_ in _STAGE3_STR_FIELDS:
+        v = stage3_record.get(f_)
+        if isinstance(v, str):
+            texts.append((f_, v))
+    for f_ in _STAGE3_LIST_FIELDS:
+        v = stage3_record.get(f_)
+        if isinstance(v, list):
+            for i, item in enumerate(v):
+                if isinstance(item, str):
+                    texts.append((f"{f_}[{i}]", item))
+
+    for question in open_questions:
+        if not isinstance(question, str):
+            continue
+        q_words = _content_words(question)
+        if not q_words:
+            continue
+        for field_name, text in texts:
+            t_words = _content_words(text)
+            overlap = q_words & t_words
+            if len(overlap) < 2:
+                continue
+            lowered = text.lower()
+            has_hedge = any(phrase in lowered for phrase in _UNCERTAINTY_PHRASES)
+            if not has_hedge:
+                result["flagged"].append({
+                    "open_question": question,
+                    "stage3_field": field_name,
+                    "stage3_text": text,
+                    "overlapping_terms": sorted(overlap),
+                })
+    return result

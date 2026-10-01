@@ -646,7 +646,13 @@ def main() -> int:
 
     # -- Stage 2 validation --------------------------------------------------
     print("[4/6] Stage 2 structural validation ...")
-    stage2_validation = schema.validate_stage2_record(stage2_raw)
+    # BLOCKING, matching the real pipeline (dd_pipeline.run_due_diligence):
+    # source-identity validation is now folded into structural validity via
+    # validate_stage2_record_and_identity -- a current-event source whose
+    # encoded FR/GovInfo document number conflicts with this run's target
+    # document now makes Stage 2 invalid. Historical sources are
+    # unaffected (see that function's docstring).
+    stage2_validation = schema.validate_stage2_record_and_identity(stage2_raw, document_number)
     report["stage2_validation"] = {
         "validation_status": stage2_validation.validation_status,
         "validation_errors": stage2_validation.validation_errors,
@@ -789,6 +795,18 @@ def main() -> int:
         "compliant": len(c2_errors) == 0,
     }
     report["ungrounded_claims_check"] = check_ungrounded_claims(stage3_raw, stage2_raw)
+
+    # ADVISORY ONLY (claim/evidence/inference hardening v2) -- never
+    # affects validation_status, failure_reason, or persistence. Flags
+    # candidate Stage 3 text that shares substantial topic vocabulary with
+    # a Stage 2 open_questions entry but contains no hedge/uncertainty
+    # phrase -- a lexical heuristic for human review, not proof of an
+    # improper resolution. See dd_schema.check_open_question_resolution's
+    # own docstring for the full caveat.
+    report["open_question_resolution_check"] = schema.check_open_question_resolution(
+        stage2_raw.get("open_questions", []) if isinstance(stage2_raw, dict) else [],
+        stage3_raw,
+    )
 
     if combined_errors:
         print("Stage 3 INVALID (structural and/or C2 reuse violation) — preserving result as-is.")
