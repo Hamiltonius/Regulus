@@ -345,6 +345,20 @@ check("no unexpected top-level files added under repo root",
                                      # web_search/tool use, no Stage 2/3 call, no import of
                                      # dd_pipeline/dd_schema/regulus_v3.
                                      "corpus_analyst.py", "corpus_analyst_schema.py",
+                                     # evidence_analyst.py / evidence_analyst_schema.py /
+                                     # evidence_retrieval.py: Evidence Analyst FOUNDATION
+                                     # (infrastructure + schema + validation + deterministic
+                                     # retrieval preparation only -- no live model call, no
+                                     # database write). evidence_retrieval.py imports
+                                     # regulus_v3 and dd_schema AS-IS (reusing
+                                     # download_source_pdf/extract_pdf_text/is_valid_pdf_url
+                                     # and classify_primary_source/
+                                     # extract_federal_register_document_number verbatim) but
+                                     # modifies neither; evidence_analyst.py/
+                                     # evidence_analyst_schema.py import neither dd_pipeline,
+                                     # dd_schema, nor regulus_v3.
+                                     "evidence_analyst.py", "evidence_analyst_schema.py",
+                                     "evidence_retrieval.py",
                                      # scripts/: the isolated live acceptance-test runner
                                      # (831b9b4), not a DD behavior change.
                                      "scripts",
