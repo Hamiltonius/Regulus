@@ -552,6 +552,94 @@ check("S13b. both-fail: attempts numbered 1 then 2, in order",
       [a.attempt_number for a in outcome_both_fail.attempts] == [1, 2])
 
 # ===========================================================================
+# T. Output-capacity / timeout revision (Corpus Analyst Acceptance #2):
+# CORPUS_ANALYST_MAX_TOKENS 12000 -> 20000, CORPUS_ANALYST_TIMEOUT_SECONDS
+# 300 -> 600. Pins the literal new values (not just "whatever the
+# constant currently is") so a future accidental revert is caught, and
+# proves the new values actually reach the Anthropic request and the
+# per-attempt diagnostics. No live Anthropic call anywhere below.
+# ===========================================================================
+check("T1. CORPUS_ANALYST_MAX_TOKENS is exactly 20000", ca.CORPUS_ANALYST_MAX_TOKENS == 20000)
+check("T2. CORPUS_ANALYST_TIMEOUT_SECONDS is exactly 600", ca.CORPUS_ANALYST_TIMEOUT_SECONDS == 600)
+check("T3. CORPUS_ANALYST_MAX_ATTEMPTS is still 2 (unchanged)", ca.CORPUS_ANALYST_MAX_ATTEMPTS == 2)
+check("T4. PROMPT_VERSION is still '1.1' (unchanged)", ca.PROMPT_VERSION == "1.1")
+check("T5. CORPUS_ANALYST_MODEL is still 'claude-sonnet-4-6' (unchanged)",
+      ca.CORPUS_ANALYST_MODEL == "claude-sonnet-4-6")
+
+_captured_request_t = {}
+
+
+def _fake_post_t(url, headers=None, json=None, timeout=None):
+    _captured_request_t["json"] = json
+    _captured_request_t["timeout"] = timeout
+    fake_text = __import__("json").dumps(make_valid_output())
+    return _FakeResponse({
+        "content": [{"type": "text", "text": fake_text}],
+        "stop_reason": "end_turn", "model": ca.CORPUS_ANALYST_MODEL, "usage": {},
+    })
+
+
+_orig_post = ca.requests.post
+ca.requests.post = _fake_post_t
+try:
+    ca.call_anthropic_corpus_analyst({"reporting_period": {}, "observations": []}, "fake-key")
+    check("T6. request sent with max_tokens=20000 (the new configured value)",
+          _captured_request_t["json"]["max_tokens"] == 20000,
+          str(_captured_request_t["json"]["max_tokens"]))
+    check("T7. requests.post called with timeout=600 (the new configured value)",
+          _captured_request_t["timeout"] == 600, str(_captured_request_t["timeout"]))
+finally:
+    ca.requests.post = _orig_post
+
+# T8/T9: per-attempt diagnostics report the new configured max_tokens/
+# timeout_seconds, for both a successful and a failed attempt.
+ca.requests.post = _fake_post_t
+try:
+    raw_t89, diag_t89, err_t89 = ca._run_single_attempt(
+        1, {"reporting_period": {}, "observations": []}, "fake-key",
+        ca.call_anthropic_corpus_analyst,
+    )
+finally:
+    ca.requests.post = _orig_post
+
+check("T8. successful-attempt diagnostics report max_tokens=20000",
+      diag_t89.max_tokens == 20000)
+check("T9. successful-attempt diagnostics report timeout_seconds=600",
+      diag_t89.timeout_seconds == 600)
+
+ca.requests.post = _fake_post_factory(text='{"broken", stop_reason="max_tokens')
+try:
+    raw_t10, diag_t10, err_t10 = ca._run_single_attempt(
+        1, {"reporting_period": {}, "observations": []}, "fake-key",
+        ca.call_anthropic_corpus_analyst,
+    )
+finally:
+    ca.requests.post = _orig_post
+
+check("T10. failed-attempt diagnostics also report max_tokens=20000/timeout_seconds=600",
+      diag_t10.max_tokens == 20000 and diag_t10.timeout_seconds == 600)
+
+# T11: existing observability behavior (per-attempt capture, both-attempts-
+# survive, security exclusion) remains intact under the new config values --
+# re-exercise the both-fail path (S7) with the new constants in effect.
+ca.requests.post = _fake_post_factory(text='{"still": "broken', stop_reason="max_tokens")
+try:
+    outcome_t11 = ca.run_corpus_analysis(
+        fixture_corpus, api_key="fake", call_analyst=ca.call_anthropic_corpus_analyst,
+    )
+finally:
+    ca.requests.post = _orig_post
+
+check("T11a. both-fail outcome under new config still records exactly 2 attempts",
+      len(outcome_t11.attempts) == 2, str(len(outcome_t11.attempts)))
+check("T11b. both-fail attempts under new config both report max_tokens=20000",
+      all(a.max_tokens == 20000 for a in outcome_t11.attempts))
+check("T11c. both-fail attempts under new config both report timeout_seconds=600",
+      all(a.timeout_seconds == 600 for a in outcome_t11.attempts))
+check("T11d. no credential material leaked under new config either",
+      "fake-key" not in json.dumps([a.to_dict() for a in outcome_t11.attempts], default=str))
+
+# ===========================================================================
 # Summary
 # ===========================================================================
 failed = [r for r in results if r[1] == "FAIL"]

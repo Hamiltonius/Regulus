@@ -52,30 +52,40 @@ PROMPT_VERSION = "1.1"  # tri-state due_diligence_ran null-handling clarificatio
 # no new model introduced.
 CORPUS_ANALYST_MODEL = "claude-sonnet-4-6"
 
-# Sizing rationale (first-principles estimate; no live-run data exists yet
-# for this role, unlike Stage 2/3's token limits, which were raised in
-# response to observed truncations on real acceptance runs -- see
-# dd_pipeline.py's STAGE2_MAX_TOKENS/STAGE3_MAX_TOKENS comments for that
-# history). For an 87-observation corpus: a generous upper bound is on the
-# order of 15-20 candidate stories, each with ~7 narrative/list fields
-# (hypothesis, alternative hypotheses, observational basis, gaps,
-# questions, evidence needed, disconfirming evidence needed) at roughly
-# 500-600 tokens per story once JSON structure overhead is included, plus
-# the administrative-activity list, unclustered-observations list, and
-# corpus-level gaps. That puts a reasonable worst case around 9,000-10,000
-# output tokens. 12000 gives real headroom above that estimate without
-# being arbitrarily large. This has NOT been validated against a live run
-# yet (Step 2 explicitly defers the live acceptance test) -- expect this
-# constant may need the same kind of revision Stage 2/3's did once real
-# output is observed.
-CORPUS_ANALYST_MAX_TOKENS = 12000
+# Sizing rationale -- REVISED after live measurement (Corpus Analyst
+# Acceptance #2, full 87-observation production corpus, input_tokens=
+# 41,017/attempt). The original first-principles estimate below (9,000-
+# 10,000 output tokens) was WRONG: both attempts measured stop_reason=
+# "max_tokens" with output_tokens=12,000 (the prior ceiling) and a JSON
+# parse failure partway through an in-progress string/object (attempt 1:
+# "Unterminated string" at raw_text_length 50,408 chars; attempt 2:
+# "Expecting property name enclosed in double quotes" at raw_text_length
+# 50,372 chars) -- i.e. the analyst was still writing output when the
+# token budget cut it off, on both attempts, mirroring the exact pattern
+# that previously justified raising dd_pipeline.py's STAGE2_MAX_TOKENS/
+# STAGE3_MAX_TOKENS. 20000 is the next controlled value to test: it is
+# not yet known to be sufficient for natural completion (stop_reason=
+# "end_turn") on the full corpus -- this is a measurement step, not a
+# final calibration -- but it is the minimum-sized next experiment that
+# gives real headroom above the proven-insufficient 12,000.
+CORPUS_ANALYST_MAX_TOKENS = 20000
 
-# No web_search tool is used here (single shot, no server-side search
-# rounds to wait on, unlike Stage 2's 600s). The output is larger than
-# Stage 3's (which uses 180s at a 4000-token cap), so this scales that
-# budget up for the larger token ceiling above rather than reusing either
-# existing constant as-is.
-CORPUS_ANALYST_TIMEOUT_SECONDS = 300
+# Timeout rationale -- REVISED after the same live measurement. No
+# web_search tool is used here (single shot, no server-side search
+# rounds to wait on, unlike Stage 2's 600s). The prior 300s budget was
+# NOT exceeded by either attempt (durations 238.06s / 229.41s for a
+# 12,000-output-token generation that hit max_tokens -- both well under
+# 300s), so 300s was never the cause of the Acceptance #2 failure; the
+# failure was max_tokens truncation, not a timeout. However, raising
+# CORPUS_ANALYST_MAX_TOKENS to 20000 raises the ceiling this same budget
+# must cover: the measured output-token generation rate was ~50.4-52.3
+# tokens/sec (12,000 tokens / 229-238s), so a full 20,000-token
+# generation extrapolates to roughly 20000/51 =~ 390s at that same rate
+# -- already above the old 300s ceiling. 600s gives headroom above that
+# linear estimate (so the NEXT controlled run measures where the analyst
+# naturally stops, rather than hitting another artificial wall at close
+# to the 300s boundary) without being an arbitrarily large value.
+CORPUS_ANALYST_TIMEOUT_SECONDS = 600
 
 # Mirrors the existing STAGE2_MAX_ATTEMPTS/STAGE3_MAX_ATTEMPTS pattern in
 # dd_pipeline.py -- one retry on any call/parse failure, no autonomous
