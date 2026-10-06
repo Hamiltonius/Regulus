@@ -22,3 +22,9 @@ venv/
 
 # Generated diagnostic reports (live acceptance-test output; not source)
 diagnostics/
+
+# Evidence Analyst live acceptance-run diagnostic artifacts (not source)
+evidence_acceptance_runs/
+
+# PDFs downloaded by evidence_retrieval.py's retrieval preparation (not source)
+evidence_pdfs/

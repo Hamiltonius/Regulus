@@ -35,9 +35,14 @@ live in evidence_retrieval.py, not here. Makes no database connection and
 performs no persistence of any kind.
 """
 
+import json
 import logging
+import os
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Callable, Optional
+
+import requests
 
 import evidence_analyst_schema as schema
 from corpus_extractor import Corpus
@@ -104,6 +109,12 @@ class EvidenceAnalysisOutcome:
     validation_errors: list = field(default_factory=list)
     failure_reason: Optional[str] = None  # set on call/parse failure only
     retrieval: Optional[EvidenceRetrievalBundle] = None
+    # Per-attempt diagnostics (see EvidenceAnalystAttemptDiagnostics below),
+    # populated only by run_live_evidence_analysis -- always [] for
+    # run_evidence_analysis (the foundation-only interface above), which
+    # makes no retry loop and has no diagnostics to report. Additive field;
+    # does not change the meaning of any field above.
+    attempts: list = field(default_factory=list)
 
     @property
     def is_valid(self) -> bool:
@@ -174,4 +185,590 @@ def run_evidence_analysis(candidate_story: dict, corpus: Corpus, *,
         validation_status="valid" if result.is_valid else "invalid",
         validation_errors=result.validation_errors,
         retrieval=retrieval_bundle,
+    )
+
+
+# ===========================================================================
+# LIVE EVIDENCE ANALYST -- real Anthropic call (separately approved task).
+#
+# Everything below is ADDITIVE: run_evidence_analysis() above is completely
+# unchanged (still requires an explicit call_analyst, still raises
+# EvidenceAnalystNotImplementedError when one isn't supplied) -- it remains
+# the foundation-only interface for structural/unit testing against any
+# stub. run_live_evidence_analysis() below is the new, separate entry point
+# that actually talks to the Anthropic API, mirroring corpus_analyst.py's
+# run_corpus_analysis()/call_anthropic_corpus_analyst()/
+# CorpusAnalystAttemptDiagnostics pattern exactly: same model-family
+# convention, same bounded retry, same per-attempt diagnostics shape, same
+# "never raise on call/parse failure -- report via the outcome" contract.
+#
+# This module still does NOT import dd_pipeline, dd_schema, regulus_v3,
+# corpus_analyst, or corpus_analyst_schema -- the real API call below uses
+# only `requests` and the Anthropic Messages API directly, exactly like
+# dd_pipeline.call_anthropic_stage2 / corpus_analyst.call_anthropic_corpus_
+# analyst do, with no new dependency on either of those modules.
+# ===========================================================================
+
+# Same model family/configuration convention already used by Stage 2/3 and
+# the Corpus Analyst elsewhere in Regulus -- no new model introduced.
+EVIDENCE_ANALYST_MODEL = "claude-sonnet-4-6"
+
+# Sizing follows the same convention as CORPUS_ANALYST_MAX_TOKENS/
+# STAGE2_MAX_TOKENS after their own live-measurement corrections (both
+# ultimately raised to 20000 after measured max_tokens truncation at their
+# prior ceilings). The Evidence Analyst's output is bounded by the same
+# EvidenceAnalysisOutcome schema shape (one candidate_story's worth of
+# question_findings/evidence_records/contradictions, not a whole corpus),
+# so 20000 is adopted as the proven-safe starting ceiling for this role
+# too, pending the same kind of live-measurement review if CS-01
+# acceptance shows truncation.
+EVIDENCE_ANALYST_MAX_TOKENS = 20000
+
+# Mirrors STAGE2_TIMEOUT_SECONDS (600s) rather than CORPUS_ANALYST_
+# TIMEOUT_SECONDS: like Stage 2 (and unlike the Corpus Analyst), this role
+# uses the server-side web_search tool, which can involve multiple search
+# rounds before the model produces its final text -- the same timeout
+# budget already proven sufficient for Stage 2's tool-using calls at this
+# token ceiling.
+EVIDENCE_ANALYST_TIMEOUT_SECONDS = 600
+
+# Mirrors the existing STAGE2_MAX_ATTEMPTS/CORPUS_ANALYST_MAX_ATTEMPTS
+# pattern -- one retry on call/parse/transport failure, no autonomous loop.
+EVIDENCE_ANALYST_MAX_ATTEMPTS = 2
+
+# Bounded, not an unrestricted crawler (spec section 3): the model may
+# issue AT MOST this many server-side web_search calls per attempt, each
+# one a query the model itself formulates -- never a scheduled or
+# open-ended autonomous research loop, and never a bulk/site-wide crawl.
+# Mirrors dd_pipeline.call_anthropic_stage2's "max_uses": 8 web_search
+# convention; set slightly higher here (10) because this role may need to
+# both verify primary documents' authorities AND search for a distinct
+# companion agency action, where Stage 2 only researches one document.
+EVIDENCE_ANALYST_WEB_SEARCH_MAX_USES = 10
+
+PROMPT_VERSION = "1.0"
+
+_EVIDENCE_ANALYST_EPISTEMIC_RULES_TEXT = "\n".join(
+    f"  - {rule}" for rule in EVIDENCE_ANALYST_EPISTEMIC_RULES
+)
+
+EVIDENCE_ANALYST_SYSTEM_PROMPT = f"""You are the Evidence Analyst in a two-pass regulatory intelligence
+pipeline. A first-pass Corpus Analyst has already proposed ONE candidate
+story -- a preliminary_hypothesis, alternative_hypotheses, research_
+questions, evidence_needed, and disconfirming_evidence_needed -- from
+titles/abstracts/automated summaries alone, WITHOUT reading any primary
+government document. Your job is to actually investigate that one story
+by reading authoritative primary sources and reporting what the evidence
+shows -- which may fully support, partially support, weaken, contradict,
+or fail to resolve the preliminary hypothesis. insufficient_evidence is a
+valid, successful outcome of your work; it is not a failure to produce one.
+
+YOU ARE ADVERSARIAL TOWARD THE PRELIMINARY HYPOTHESIS, NOT AN ADVOCATE FOR
+IT. The Corpus Analyst's hypothesis may simply be wrong. Your job is to
+test it and its alternatives against real evidence, and to actively
+look for evidence that would weaken or contradict it -- not merely to
+confirm it is plausible.
+
+EPISTEMIC RULES -- apply every one of these, not merely avoid
+contradicting them:
+{_EVIDENCE_ANALYST_EPISTEMIC_RULES_TEXT}
+
+WHAT YOU ARE GIVEN:
+  - "candidate_story": the Corpus Analyst's full, unmodified output for
+    this one story (story_id, title, preliminary_hypothesis,
+    alternative_hypotheses, research_questions, evidence_needed,
+    disconfirming_evidence_needed, supporting_document_numbers, etc).
+  - "retrieved_documents": a deterministic, non-LLM retrieval layer has
+    ALREADY fetched each of this story's supporting_document_numbers from
+    the Federal Register and verified its identity before you ever saw
+    it. Each entry has "status" ("retrieved" or "failed"),
+    "identity_status" ("verified" means the deterministic layer confirmed
+    this document's identity independently -- you may rely on this;
+    "mismatch" means identity could NOT be confirmed -- treat any such
+    document as unusable, do not cite it as evidence), "text" (the
+    authoritative document text actually fetched -- null if retrieval
+    failed), "text_source" ("pdf_full" = the complete document;
+    "pdf_excerpt" = ONLY a bounded excerpt, NOT the full document --
+    "truncated": true marks this), "source_url", "publication_date", and
+    "effective_date" (these two are frequently DIFFERENT dates -- never
+    conflate them). A "failed" entry means no authoritative text could be
+    retrieved for that document_number; you may not substitute anything
+    else (an abstract, a title, your own prior knowledge) as if it were
+    that document's primary text, and you must account for it in
+    remaining_gaps rather than silently ignoring it.
+
+FULL-DOCUMENT DISCIPLINE:
+  - When text_source="pdf_full", you have the complete document; read it
+    fully (preamble, operative text, definitions, exceptions, authorities
+    cited, effective-date provisions) before answering the research
+    questions.
+  - When text_source="pdf_excerpt" (truncated=true), you have ONLY a
+    bounded excerpt, not the full document. Explicitly say so in
+    "limitations" for any evidence_record built from it, and NEVER claim
+    or imply you reviewed sections beyond what was actually supplied.
+  - Never rely on a Federal Register abstract/title alone when operative
+    primary text was actually supplied to you -- read the text itself.
+
+RESEARCH BEYOND THE SUPPLIED DOCUMENTS: you MAY use the web_search tool,
+but this is NOT a license to crawl broadly. Use it only when the
+candidate_story's research_questions, evidence_needed, or
+disconfirming_evidence_needed, or an authority/citation named INSIDE a
+retrieved primary document, or an obvious companion government action
+(e.g. a parallel rule from a different agency implementing the same
+upstream decision) genuinely requires it. When you do search, prefer
+sources in this order -- primary sources CONTROL legal/regulatory
+conclusions, secondary sources may only provide context and never
+override a primary source:
+  1. Federal Register (federalregister.gov) / GovInfo (govinfo.gov) / eCFR
+  2. BIS / Treasury / OFAC / State / DDTC / FinCEN (bis.doc.gov,
+     treasury.gov, ofac.treasury.gov, state.gov, commerce.gov)
+  3. White House / other authoritative U.S. agency sites
+  4. Congress / statutory text (congress.gov, uscode.house.gov)
+  5. Secondary sources (news coverage, law-firm summaries, etc.) -- only
+     when needed for context; never as the basis for a legal/regulatory
+     conclusion, and never presented as equivalent in authority to a
+     primary source.
+
+SOURCE IDENTITY -- you must NOT claim "verified" for any evidence_record
+unless it corresponds to one of the "retrieved_documents" entries the
+deterministic retrieval layer already marked identity_status="verified".
+For anything YOU find yourself via web_search, set source_identity_status
+to "unverified" (if it looks like a primary government document you have
+not independently had cross-checked) or "not_applicable" (if it is a
+secondary/contextual source making no claim to be a specific government
+document). Only set "document_number" when you are citing one of this
+story's supplied supporting_document_numbers; for anything else you find
+via web_search, leave document_number null and identify it by
+source_title/source_url instead -- never invent, guess, or paraphrase a
+Federal Register document_number for a document you were not given.
+
+TRACEABILITY: every material factual finding in question_findings and
+every contradiction must trace to one or more evidence_ids that actually
+exist in your own evidence_records. A question_finding with status
+"answered" or "partially_answered" must cite the evidence_ids that
+answer it. Every "retrieved_documents" entry with status="retrieved" that
+you were actually given MUST be accounted for in evidence_records (cited
+by its document_number) -- you may not silently drop a supplied primary
+document; if, after reading it, it turns out not to bear on this story,
+say so explicitly in that evidence_record's "limitations" rather than
+omitting it. Preserve contradictory evidence rather than silently
+reconciling it away -- if two sources disagree, record both and say so in
+"contradictions", don't quietly pick the one that fits your assessment.
+
+OUTPUT: return ONLY valid JSON, no prose, no markdown fences, matching
+EXACTLY this shape (empty arrays are fine where you genuinely found
+nothing to report; omitting a required key is not):
+
+{{
+  "story_id": "",
+  "research_status": "complete|partial|insufficient_evidence",
+  "hypothesis_assessment": "supported|weakened|contradicted|unresolved",
+  "question_findings": [
+    {{
+      "question": "",
+      "status": "answered|partially_answered|unanswered",
+      "finding": "",
+      "evidence_ids": [],
+      "confidence": "high|medium|low"
+    }}
+  ],
+  "evidence_records": [
+    {{
+      "evidence_id": "",
+      "document_number": null,
+      "source_title": "",
+      "source_url": "",
+      "source_type": "primary|secondary",
+      "primary_source": true,
+      "retrieved_at": null,
+      "source_identity_status": "verified|mismatch|unverified|not_applicable",
+      "publication_date": null,
+      "effective_date": null,
+      "relevant_excerpt": "",
+      "supports": [],
+      "contradicts": [],
+      "limitations": ""
+    }}
+  ],
+  "contradictions": [
+    {{"description": "", "evidence_ids": [], "significance": ""}}
+  ],
+  "remaining_gaps": [],
+  "disconfirming_evidence_found": [],
+  "overall_assessment": "",
+  "confidence": "high|medium|low"
+}}
+
+Either "relevant_excerpt" or "evidence_summary" must be a non-empty string
+on every evidence_record (use "evidence_summary" instead of
+"relevant_excerpt" for a secondary/contextual source with no literal
+excerpt to quote). question_findings must cover EVERY research_question
+in the candidate_story exactly once -- none dropped, none duplicated,
+none substituted for different question text. A non-"unresolved"
+hypothesis_assessment requires at least one evidence_record; it cannot
+rest on zero evidence.
+"""
+
+
+def _extract_json_text(content_blocks):
+    """Pull the final JSON text out of a Messages API response's content
+    blocks, ignoring any server_tool_use / web_search_tool_result blocks
+    (those are the model's search activity, not its answer). Mirrors
+    dd_pipeline._extract_json_text / corpus_analyst._extract_json_text
+    exactly, reimplemented locally so this module keeps its existing
+    zero-dependency isolation from dd_pipeline/corpus_analyst."""
+    text = "".join(b.get("text", "") for b in content_blocks if b.get("type") == "text")
+    text = text.strip()
+    text = text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    return text
+
+
+class EvidenceAnalystJSONDecodeError(ValueError):
+    """Raised by call_anthropic_evidence_analyst when the extracted text is
+    not valid JSON. Mirrors dd_pipeline.Stage2JSONDecodeError / corpus_
+    analyst.CorpusAnalystJSONDecodeError exactly -- DIAGNOSTIC-ONLY,
+    str(this) is IDENTICAL to str() of the underlying json.JSONDecodeError.
+    Response-side only; never carries the API key or any request header.
+    """
+
+    def __init__(self, json_error: json.JSONDecodeError, *, raw_text: str,
+                 content_blocks: list, response_meta: dict):
+        super().__init__(str(json_error))
+        self.raw_text = raw_text
+        self.content_blocks = content_blocks
+        self.response_meta = response_meta
+
+
+def _build_evidence_analyst_user_payload(candidate_story: dict,
+                                          retrieval_bundle: EvidenceRetrievalBundle,
+                                          corpus: Corpus) -> dict:
+    """Build the user-turn payload for the live call: the candidate_story
+    EXACTLY as produced by the Corpus Analyst (unmodified), the deterministic
+    retrieval layer's own findings for this story's supporting documents
+    (never the whole 87-observation corpus -- this role investigates ONE
+    story, not the full reporting window), and the corpus's reporting
+    period for date context only."""
+    return {
+        "reporting_period": {"start": corpus.start_date, "end": corpus.end_date},
+        "candidate_story": candidate_story,
+        "retrieved_documents": [d.to_dict() for d in retrieval_bundle.documents],
+    }
+
+
+def call_anthropic_evidence_analyst(candidate_story: dict,
+                                     retrieval_bundle: EvidenceRetrievalBundle,
+                                     corpus: Corpus, api_key: str):
+    """Real Evidence Analyst call: Anthropic Messages API with the
+    server-side web_search tool enabled (bounded by
+    EVIDENCE_ANALYST_WEB_SEARCH_MAX_USES -- never an unrestricted crawler),
+    so the model can investigate beyond the supplied retrieved_documents
+    when the story's research questions genuinely require it.
+
+    Returns (parsed_json, raw_text, response_meta) on success, mirroring
+    corpus_analyst.call_anthropic_corpus_analyst's return shape exactly.
+    Raises EvidenceAnalystJSONDecodeError (carrying raw_text/content_blocks/
+    response_meta) on a JSON parse failure; any other exception (network
+    error, HTTP error, timeout) propagates as-is. Never persists or logs
+    the API key -- it is used only in the one outbound request header.
+    """
+    payload = _build_evidence_analyst_user_payload(candidate_story, retrieval_bundle, corpus)
+
+    resp = requests.post(
+        "https://api.anthropic.com/v1/messages",
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+        json={
+            "model": EVIDENCE_ANALYST_MODEL,
+            "max_tokens": EVIDENCE_ANALYST_MAX_TOKENS,
+            "system": EVIDENCE_ANALYST_SYSTEM_PROMPT,
+            "messages": [{"role": "user", "content": json.dumps(payload, indent=2)}],
+            "tools": [{
+                "type": "web_search_20250305",
+                "name": "web_search",
+                "max_uses": EVIDENCE_ANALYST_WEB_SEARCH_MAX_USES,
+            }],
+        },
+        timeout=EVIDENCE_ANALYST_TIMEOUT_SECONDS,
+    )
+    resp.raise_for_status()
+    response_json = resp.json()
+    content = response_json["content"]
+    text = _extract_json_text(content)
+
+    response_meta = {
+        "stop_reason": response_json.get("stop_reason"),
+        "stop_sequence": response_json.get("stop_sequence"),
+        "model": response_json.get("model"),
+        "usage": response_json.get("usage"),
+        "content_block_count": len(content) if isinstance(content, list) else None,
+        "content_block_types": (
+            [b.get("type") for b in content] if isinstance(content, list) else None
+        ),
+    }
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise EvidenceAnalystJSONDecodeError(
+            e, raw_text=text, content_blocks=content, response_meta=response_meta
+        ) from e
+
+    return parsed, text, response_meta
+
+
+@dataclass
+class EvidenceAnalystAttemptDiagnostics:
+    """Diagnostic record for ONE attempt inside run_live_evidence_analysis's
+    retry loop. Mirrors corpus_analyst.CorpusAnalystAttemptDiagnostics
+    field-for-field and the same request_succeeded/transport_error vs.
+    parse_succeeded/parse_error distinction -- see that class's docstring
+    for the full rationale. Captured for every attempt, success or
+    failure, so a JSON parse failure or max_tokens truncation never
+    destroys what the model actually returned.
+
+    SECURITY: never carries ANTHROPIC_API_KEY, the x-api-key header, or any
+    other credential material -- only the configured model/max_tokens/
+    timeout (public constants) and the model's own response content/
+    metadata.
+    """
+    attempt_number: int
+    model: str
+    max_tokens: int
+    timeout_seconds: int
+    request_succeeded: bool = False
+    stop_reason: Optional[str] = None
+    stop_sequence: Optional[str] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    raw_text: Optional[str] = None
+    raw_text_length: Optional[int] = None
+    parse_succeeded: Optional[bool] = None
+    parse_error: Optional[str] = None
+    validation_succeeded: Optional[bool] = None
+    validation_errors: list = field(default_factory=list)
+    transport_error: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    duration_seconds: Optional[float] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "attempt_number": self.attempt_number,
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "timeout_seconds": self.timeout_seconds,
+            "request_succeeded": self.request_succeeded,
+            "stop_reason": self.stop_reason,
+            "stop_sequence": self.stop_sequence,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "raw_text": self.raw_text,
+            "raw_text_length": self.raw_text_length,
+            "parse_succeeded": self.parse_succeeded,
+            "parse_error": self.parse_error,
+            "validation_succeeded": self.validation_succeeded,
+            "validation_errors": self.validation_errors,
+            "transport_error": self.transport_error,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "duration_seconds": self.duration_seconds,
+        }
+
+
+def _run_single_live_attempt(attempt_number: int, candidate_story: dict,
+                              retrieval_bundle: EvidenceRetrievalBundle, corpus: Corpus,
+                              api_key: Optional[str], caller: Callable):
+    """Run exactly one caller(candidate_story, retrieval_bundle, corpus,
+    api_key) attempt and return (raw_or_None, EvidenceAnalystAttemptDiagnostics,
+    error_or_None). Mirrors corpus_analyst._run_single_attempt exactly --
+    see that function's docstring for the full request_succeeded/
+    transport_error vs. parse_succeeded/parse_error rationale."""
+    started = datetime.now(timezone.utc)
+    diag = EvidenceAnalystAttemptDiagnostics(
+        attempt_number=attempt_number,
+        model=EVIDENCE_ANALYST_MODEL,
+        max_tokens=EVIDENCE_ANALYST_MAX_TOKENS,
+        timeout_seconds=EVIDENCE_ANALYST_TIMEOUT_SECONDS,
+        started_at=started.isoformat(),
+    )
+
+    def _finish():
+        finished = datetime.now(timezone.utc)
+        diag.finished_at = finished.isoformat()
+        diag.duration_seconds = (finished - started).total_seconds()
+
+    def _apply_response_meta(response_meta):
+        if not response_meta:
+            return
+        diag.stop_reason = response_meta.get("stop_reason")
+        diag.stop_sequence = response_meta.get("stop_sequence")
+        usage = response_meta.get("usage") or {}
+        diag.input_tokens = usage.get("input_tokens")
+        diag.output_tokens = usage.get("output_tokens")
+
+    try:
+        result = caller(candidate_story, retrieval_bundle, corpus, api_key)
+    except Exception as e:  # network error, HTTP error, JSON parse error, stub failure
+        _finish()
+        raw_text = getattr(e, "raw_text", None)
+        response_meta = getattr(e, "response_meta", None)
+        if raw_text is not None or response_meta is not None:
+            diag.request_succeeded = True
+            diag.raw_text = raw_text
+            diag.raw_text_length = len(raw_text) if raw_text is not None else None
+            diag.parse_succeeded = False
+            diag.parse_error = str(e)
+            _apply_response_meta(response_meta)
+        else:
+            diag.request_succeeded = False
+            diag.transport_error = str(e)
+        return None, diag, e
+
+    _finish()
+    diag.request_succeeded = True
+    diag.parse_succeeded = True
+
+    if isinstance(result, tuple) and len(result) == 3:
+        raw, raw_text, response_meta = result
+    else:
+        # Legacy/test-stub shape: a bare dict, no diagnostic metadata
+        # available for this attempt -- not fabricated.
+        raw, raw_text, response_meta = result, None, None
+
+    diag.raw_text = raw_text
+    diag.raw_text_length = len(raw_text) if raw_text is not None else None
+    _apply_response_meta(response_meta)
+
+    return raw, diag, None
+
+
+def _find_silently_dropped_documents(raw: Any, retrieval_bundle: EvidenceRetrievalBundle) -> list:
+    """Deterministic check (spec section 9): a supplied primary document
+    that the retrieval layer successfully retrieved for this story may not
+    be silently absent from evidence_records. Returns a list of human-
+    readable error strings (empty if none were dropped). This is a
+    run_live_evidence_analysis-level check, not a change to evidence_
+    analyst_schema.py -- the approved schema module is left exactly as
+    delivered in the foundation task; this is additive traceability
+    enforcement specific to the live call."""
+    if not isinstance(raw, dict):
+        return []
+    evidence_records = raw.get("evidence_records")
+    if not isinstance(evidence_records, list):
+        return []
+    cited_document_numbers = {
+        rec.get("document_number") for rec in evidence_records if isinstance(rec, dict)
+    }
+    errors = []
+    for doc in retrieval_bundle.retrieved_documents:
+        if doc.document_number not in cited_document_numbers:
+            errors.append(
+                f"root.evidence_records: supplied primary document "
+                f"{doc.document_number!r} was successfully retrieved but never cited "
+                "in evidence_records (a supplied document may not be silently dropped)"
+            )
+    return errors
+
+
+def run_live_evidence_analysis(candidate_story: dict, corpus: Corpus, *,
+                                api_key: Optional[str] = None,
+                                call_analyst: Optional[Callable[[dict, EvidenceRetrievalBundle, Corpus, str], Any]] = None,
+                                retrieve: Optional[Callable[..., EvidenceRetrievalBundle]] = None,
+                                retrieval_kwargs: Optional[dict] = None,
+                                ) -> EvidenceAnalysisOutcome:
+    """Live entry point for the Evidence Analyst over exactly ONE
+    candidate_story. Separate from run_evidence_analysis() above (which
+    remains the foundation-only, no-default-caller interface): this
+    function DOES default call_analyst to the real
+    call_anthropic_evidence_analyst, mirroring corpus_analyst.
+    run_corpus_analysis's architecture exactly --
+
+      - always runs deterministic retrieval first (no LLM, no database
+        write), via `retrieve` (defaults to evidence_retrieval.
+        build_evidence_source_material) -- attached to the outcome's
+        `.retrieval` even on total failure;
+      - retries up to EVIDENCE_ANALYST_MAX_ATTEMPTS on call/parse/transport
+        failure only (never on a structurally-valid-but-schema-invalid
+        model output -- that is a model-quality issue, not a transient
+        failure, exactly like run_corpus_analysis's own retry discipline);
+      - validates with evidence_analyst_schema.validate_evidence_analysis
+        PLUS the additional _find_silently_dropped_documents check (spec
+        section 9) -- invalid model output can never become a valid
+        evidence package, and a supplied primary document can never be
+        silently absent from evidence_records;
+      - records one EvidenceAnalystAttemptDiagnostics per attempt made
+        (success or failure) onto the returned outcome's `.attempts` list.
+
+    `call_analyst`, when supplied (e.g. in tests), is called as
+    call_analyst(candidate_story, retrieval_bundle, corpus, api_key) and
+    must return either a bare dict (legacy/stub shape) or a
+    (parsed, raw_text, response_meta) tuple (the real call_anthropic_
+    evidence_analyst's shape) -- never makes a live network call when a
+    test supplies its own call_analyst/retrieve.
+
+    Never raises on a model/network/parse failure -- caught, logged, and
+    reported via the returned EvidenceAnalysisOutcome.failure_reason.
+    """
+    api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+    caller = call_analyst or call_anthropic_evidence_analyst
+    retrieve_fn = retrieve or build_evidence_source_material
+    retrieval_bundle = retrieve_fn(candidate_story, corpus, **(retrieval_kwargs or {}))
+
+    valid_document_numbers = {
+        o.document_number for o in corpus.observations if o.document_number is not None
+    }
+
+    attempts = []
+    raw = None
+    last_error = None
+    last_is_valid = False
+    last_validation_errors: list = []
+    for attempt_number in range(1, EVIDENCE_ANALYST_MAX_ATTEMPTS + 1):
+        attempt_raw, diag, err = _run_single_live_attempt(
+            attempt_number, candidate_story, retrieval_bundle, corpus, api_key, caller,
+        )
+        if err is None:
+            result = schema.validate_evidence_analysis(
+                attempt_raw, story=candidate_story,
+                valid_document_numbers=valid_document_numbers,
+                retrieval_results=retrieval_bundle.by_document_number(),
+            )
+            dropped_errors = _find_silently_dropped_documents(attempt_raw, retrieval_bundle)
+            combined_errors = list(result.validation_errors) + dropped_errors
+            is_valid = result.is_valid and not dropped_errors
+
+            diag.validation_succeeded = is_valid
+            diag.validation_errors = combined_errors
+            attempts.append(diag)
+
+            raw = attempt_raw
+            last_error = None
+            last_is_valid = is_valid
+            last_validation_errors = combined_errors
+            break
+        else:
+            attempts.append(diag)
+            last_error = err
+            log.warning("Evidence Analyst live attempt %d/%d failed for story_id=%s: %s",
+                        attempt_number, EVIDENCE_ANALYST_MAX_ATTEMPTS,
+                        candidate_story.get("story_id"), err)
+
+    if last_error is not None:
+        return EvidenceAnalysisOutcome(
+            raw=None, validation_status="invalid",
+            validation_errors=[f"evidence_analyst_call_failed: {last_error}"],
+            failure_reason="evidence_analyst_call_failed",
+            retrieval=retrieval_bundle,
+            attempts=attempts,
+        )
+
+    return EvidenceAnalysisOutcome(
+        raw=raw,
+        validation_status="valid" if last_is_valid else "invalid",
+        validation_errors=last_validation_errors,
+        retrieval=retrieval_bundle,
+        attempts=attempts,
     )

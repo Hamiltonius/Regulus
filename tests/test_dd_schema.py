@@ -359,6 +359,14 @@ check("no unexpected top-level files added under repo root",
                                      # dd_schema, nor regulus_v3.
                                      "evidence_analyst.py", "evidence_analyst_schema.py",
                                      "evidence_retrieval.py",
+                                     # evidence_analyst_acceptance_cs01.py: the LIVE Evidence
+                                     # Analyst diagnostic acceptance runner for CS-01. Makes
+                                     # real retrieval/model calls ONLY when explicitly
+                                     # executed (never from this test suite) -- reads the
+                                     # golden fixtures read-only, never re-invokes the Corpus
+                                     # Analyst, never touches dd_pipeline/dd_schema/
+                                     # regulus_v3, no database write, no email.
+                                     "evidence_analyst_acceptance_cs01.py",
                                      # scripts/: the isolated live acceptance-test runner
                                      # (831b9b4), not a DD behavior change.
                                      "scripts",
@@ -366,7 +374,12 @@ check("no unexpected top-level files added under repo root",
                                      # acceptance runner writes its reports into
                                      # (b634378) -- may or may not exist on disk
                                      # depending on whether it's been run locally.
-                                     "diagnostics"} == set())
+                                     "diagnostics",
+                                     # evidence_acceptance_runs/: gitignored output directory
+                                     # evidence_analyst_acceptance_cs01.py writes its
+                                     # diagnostic JSON artifacts into -- may or may not exist
+                                     # on disk depending on whether it's been run locally.
+                                     "evidence_acceptance_runs"} == set())
 
 # ---------------------------------------------------------------------------
 # Summary
