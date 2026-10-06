@@ -68,6 +68,16 @@ _SELECT_COLUMNS = [
     "due_diligence_ran",
 ]
 
+# Columns that may be legitimately absent on an older/historical `alerts`
+# schema, discovered via introspection rather than assumed. Only
+# due_diligence_ran is known to vary today (see _introspect_columns and
+# get_corpus) -- a column in this set that turns out to be missing gets a
+# deterministic None rather than causing the SELECT to fail with
+# "no such column". analysis_generated_at is NOT in this set: it is
+# documented/confirmed present on production, and tier determination
+# continues to rely on it exactly as before.
+_OPTIONAL_COLUMNS = {"due_diligence_ran"}
+
 _JSON_COLUMNS = {"agency", "countries", "entities", "eccns"}
 
 
@@ -101,7 +111,14 @@ def _tier(analysis_generated_at: Optional[str]) -> str:
 class CorpusObservation:
     """One row of the extracted corpus. Field names intentionally mirror
     the persisted columns (plus `tier` and the renamed `publication_date`
-    for clarity) — no field here is computed from document content."""
+    for clarity) — no field here is computed from document content.
+
+    due_diligence_ran is TRI-STATE: True/False when the database schema
+    establishes DD status (the due_diligence_ran column exists and holds
+    0/1), or None when the available schema cannot establish it (the
+    column doesn't exist on this database at all). None is never a
+    stand-in for False — see get_corpus's schema-introspection docstring.
+    """
     document_number: Optional[str]
     publication_date: Optional[str]
     effective_date: Optional[str]
@@ -115,7 +132,7 @@ class CorpusObservation:
     summary: Optional[str]
     primary_source_url: Optional[str]
     tier: str
-    due_diligence_ran: bool
+    due_diligence_ran: Optional[bool]
 
     def to_dict(self) -> dict:
         return {
@@ -161,9 +178,33 @@ class Corpus:
         return json.dumps(self.to_dict(), **kwargs)
 
 
+def _existing_columns(conn: sqlite3.Connection, table: str) -> set:
+    """Read-only schema introspection via PRAGMA table_info — never an
+    ALTER/INSERT/UPDATE/DELETE, never a migration, never a write of any
+    kind. Used to detect whether a given column exists on THIS database's
+    `alerts` table before the SELECT is built, so a historical schema
+    missing a column (e.g. due_diligence_ran, absent on the current
+    node02 production database) fails safe to None for that column
+    instead of raising sqlite3.OperationalError."""
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
 def get_corpus(conn: sqlite3.Connection, start_date: str, end_date: str) -> Corpus:
     """Read-only retrieval of every `alerts` row whose publication date
     falls within [start_date, end_date] inclusive.
+
+    SCHEMA COMPATIBILITY: before building the SELECT, this function
+    introspects which columns actually exist on this database's `alerts`
+    table (via _existing_columns/PRAGMA table_info — read-only, no
+    migration). Any column in _OPTIONAL_COLUMNS that is missing is
+    dropped from the SELECT and reported as None on every observation,
+    rather than raising sqlite3.OperationalError or being silently
+    inferred from some other column. Today the only such column is
+    due_diligence_ran: on a historical/production database that predates
+    it, every observation's due_diligence_ran is None (tri-state
+    "unknown from this schema"), never False — see CorpusObservation's
+    docstring. analysis_generated_at is NOT optional: it is required for
+    tier determination and assumed present, exactly as before this fix.
 
     Reporting-window semantics:
       - Membership is decided SOLELY by the `pub_date` column (the
@@ -193,7 +234,11 @@ def get_corpus(conn: sqlite3.Connection, start_date: str, end_date: str) -> Corp
     never calls out to any LLM/API/network function, and does not import
     or invoke anything from dd_pipeline, dd_schema, or regulus_v3.
     """
-    columns_sql = ", ".join(_SELECT_COLUMNS)
+    existing = _existing_columns(conn, "alerts")
+    select_columns = [c for c in _SELECT_COLUMNS if c not in _OPTIONAL_COLUMNS or c in existing]
+    absent_optional_columns = [c for c in _SELECT_COLUMNS if c in _OPTIONAL_COLUMNS and c not in existing]
+
+    columns_sql = ", ".join(select_columns)
     rows = conn.execute(
         f"""
         SELECT {columns_sql}
@@ -206,9 +251,13 @@ def get_corpus(conn: sqlite3.Connection, start_date: str, end_date: str) -> Corp
 
     observations = []
     for row in rows:
-        record = dict(zip(_SELECT_COLUMNS, row))
+        record = dict(zip(select_columns, row))
+        for col in absent_optional_columns:
+            record[col] = None  # schema cannot establish this -- not inferred as False
         for col in _JSON_COLUMNS:
             record[col] = _decode_json_field(record[col])
+
+        raw_dd_ran = record["due_diligence_ran"]
 
         observations.append(CorpusObservation(
             document_number=record["document_number"],
@@ -224,7 +273,10 @@ def get_corpus(conn: sqlite3.Connection, start_date: str, end_date: str) -> Corp
             summary=record["summary"],
             primary_source_url=record["primary_source_url"],
             tier=_tier(record["analysis_generated_at"]),
-            due_diligence_ran=bool(record["due_diligence_ran"]),
+            # Tri-state: None (column absent, or NULL even though present)
+            # stays None -- never coerced to False. Only an actual 0/1
+            # value becomes a real bool.
+            due_diligence_ran=None if raw_dd_ran is None else bool(raw_dd_ran),
         ))
 
     return Corpus(start_date=start_date, end_date=end_date, observations=observations)

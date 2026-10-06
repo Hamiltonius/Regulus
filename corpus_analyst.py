@@ -45,7 +45,7 @@ from corpus_extractor import Corpus
 log = logging.getLogger("regulus.corpus_analyst")
 
 SCHEMA_VERSION = "1.0"
-PROMPT_VERSION = "1.0"
+PROMPT_VERSION = "1.1"  # tri-state due_diligence_ran null-handling clarification
 
 # Same model family already used for Stage 1/2/3 elsewhere in Regulus —
 # no new model introduced.
@@ -91,14 +91,21 @@ database of Federal Register documents. Each observation may carry a
 "tier" of "analyzed" (an earlier automated step produced structured
 fields for it) or "metadata_only" (only title/agency/date/score survive
 -- no structured analysis was performed). Every observation also carries
-a numeric "score", a "due_diligence_ran" flag, and -- for "analyzed"
+a numeric "score", a "due_diligence_ran" value, and -- for "analyzed"
 observations only -- fields such as countries/entities/eccns/change_type/
 summary.
 
+due_diligence_ran is TRI-STATE: true, false, or null. null means this
+database's schema could not establish whether due diligence ran -- it is
+NOT evidence that it did not run. Never treat null as equivalent to
+false, and never treat it as evidence of anything about the observation's
+importance.
+
 THESE ARE SIGNALS, NOT GROUND TRUTH ABOUT SIGNIFICANCE. A high score does
 not mean a document is materially important. A low score does not mean it
-is unimportant. due_diligence_ran reflects an earlier, narrower automated
-screening decision, not a verified importance judgment. A "metadata_only"
+is unimportant. due_diligence_ran (when known) reflects an earlier,
+narrower automated screening decision, not a verified importance
+judgment. A "metadata_only"
 observation has not been read at the same depth as an "analyzed" one --
 treat its absence of countries/entities/eccns as UNKNOWN, never as
 evidence that none exist.

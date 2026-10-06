@@ -309,6 +309,35 @@ check("P5. corpus_analyst introduces no Stage-1 retry constant",
       not hasattr(ddp, "STAGE1_MAX_ATTEMPTS"))
 
 # ===========================================================================
+# R. due_diligence_ran tri-state: prompt explicitly tells the model null
+# is not false (schema-compatibility fix). A text-content check on the
+# prompt itself, not a claim about what the model will actually do.
+# ===========================================================================
+check("R1. system prompt explicitly addresses due_diligence_ran null case",
+      "null" in ca.CORPUS_ANALYST_SYSTEM_PROMPT.lower()
+      and "due_diligence_ran" in ca.CORPUS_ANALYST_SYSTEM_PROMPT)
+_normalized_prompt = " ".join(ca.CORPUS_ANALYST_SYSTEM_PROMPT.lower().split())
+check("R2. system prompt explicitly forbids treating null as false",
+      "never treat null as equivalent to false" in _normalized_prompt)
+
+# Payload with due_diligence_ran=None (historical-schema shape) still
+# reaches run_corpus_analysis and serializes as JSON null, not coerced.
+hist_shape_corpus = make_fixture_corpus()
+hist_shape_corpus.observations[0].due_diligence_ran = None
+captured_payload_2 = {}
+
+
+def capturing_stub_2(corpus_payload, api_key):
+    captured_payload_2.update(corpus_payload)
+    return make_valid_output()
+
+
+ca.run_corpus_analysis(hist_shape_corpus, api_key="fake", call_analyst=capturing_stub_2)
+sent_obs = {o["document_number"]: o for o in captured_payload_2.get("observations", [])}
+check("R3. due_diligence_ran=None observation passed through as null, not coerced to False",
+      sent_obs["2099-00001"]["due_diligence_ran"] is None)
+
+# ===========================================================================
 # Call-failure path: retries once, reports failure_reason, never raises
 # ===========================================================================
 attempts = {"count": 0}
