@@ -339,6 +339,12 @@ check("no unexpected top-level files added under repo root",
                                      # extraction over the alerts table. Does not import or
                                      # touch dd_pipeline/dd_schema/regulus_v3's DD behavior.
                                      "corpus_extractor.py",
+                                     # corpus_analyst.py / corpus_analyst_schema.py: Step 2 --
+                                     # first-pass Corpus Analyst (intelligence requirements
+                                     # generation) and its standalone output validator. No
+                                     # web_search/tool use, no Stage 2/3 call, no import of
+                                     # dd_pipeline/dd_schema/regulus_v3.
+                                     "corpus_analyst.py", "corpus_analyst_schema.py",
                                      # scripts/: the isolated live acceptance-test runner
                                      # (831b9b4), not a DD behavior change.
                                      "scripts",
