@@ -367,6 +367,66 @@ check("no unexpected top-level files added under repo root",
                                      # Analyst, never touches dd_pipeline/dd_schema/
                                      # regulus_v3, no database write, no email.
                                      "evidence_analyst_acceptance_cs01.py",
+                                     # intelligence_analyst_pass2.py / intelligence_analyst_
+                                     # pass2_schema.py: Role #3 -- the Intelligence Analyst's
+                                     # SECOND pass (evidence reassessment). No web_search/
+                                     # tool use, no retrieval, no database write, no import of
+                                     # dd_pipeline/dd_schema/regulus_v3/corpus_analyst/
+                                     # corpus_analyst_schema/evidence_analyst/evidence_
+                                     # analyst_schema/evidence_retrieval.
+                                     "intelligence_analyst_pass2.py",
+                                     "intelligence_analyst_pass2_schema.py",
+                                     # intelligence_pass2_acceptance_cs01.py: the Pass #2 live
+                                     # CS-01 diagnostic acceptance runner. Reads the frozen
+                                     # Corpus Analyst fixture and a supplied Evidence Analyst
+                                     # artifact read-only; never re-invokes the Corpus Analyst
+                                     # or the Evidence Analyst, no database write, no email.
+                                     "intelligence_pass2_acceptance_cs01.py",
+                                     # intelligence_editor.py / intelligence_editor_schema.py:
+                                     # Role #4 -- the Intelligence Editor (compiles REGULUS
+                                     # INTELLIGENCE BRIEF #001 from validated Pass #2 story
+                                     # reassessments). No web_search/tool use, no independent
+                                     # research, no database write, no import of dd_pipeline/
+                                     # dd_schema/regulus_v3/corpus_analyst/corpus_analyst_
+                                     # schema/evidence_analyst/evidence_analyst_schema/
+                                     # evidence_retrieval/intelligence_analyst_pass2.
+                                     "intelligence_editor.py",
+                                     "intelligence_editor_schema.py",
+                                     # intelligence_store.py: persistence for story/evidence/
+                                     # reassessment/brief state, in a completely separate
+                                     # SQLite file (INTELLIGENCE_DB_PATH, default
+                                     # regulus_intelligence.db) from regulus_v3.DB_PATH's
+                                     # production bis_watcher.db. Never imports regulus_v3/
+                                     # dd_pipeline/dd_schema.
+                                     "intelligence_store.py",
+                                     # regulus_orchestrator.py: the ONE module allowed to wire
+                                     # Corpus Analyst Pass #1 -> Evidence Analyst ->
+                                     # Intelligence Analyst Pass #2 -> Intelligence Editor
+                                     # together, with per-story failure isolation and
+                                     # persistence via intelligence_store.py. Makes no live
+                                     # API call of its own; every call_* parameter is an
+                                     # injected stage stub forwarded verbatim.
+                                     "regulus_orchestrator.py",
+                                     # regulus_brief001_acceptance.py: the live, end-to-end
+                                     # REGULUS INTELLIGENCE BRIEF #001 acceptance runner.
+                                     # Makes multiple real Anthropic calls ONLY when
+                                     # explicitly executed (never from this test suite);
+                                     # reads the golden corpus fixture read-only, never
+                                     # re-runs extraction from the production alerts table,
+                                     # never touches bis_watcher.db, no email.
+                                     "regulus_brief001_acceptance.py",
+                                     # brief_acceptance_runs/: gitignored output directory
+                                     # regulus_brief001_acceptance.py writes its SQLite store
+                                     # and diagnostic JSON artifacts into -- may or may not
+                                     # exist on disk depending on whether it's been run
+                                     # locally.
+                                     "brief_acceptance_runs",
+                                     # regulus_intelligence.db: gitignored SQLite file
+                                     # intelligence_store.py's default INTELLIGENCE_DB_PATH
+                                     # writes to -- may or may not exist on disk depending on
+                                     # whether the orchestrator has been run locally (tests
+                                     # always use their own tempdir db_path=, never this file).
+                                     "regulus_intelligence.db",
                                      # scripts/: the isolated live acceptance-test runner
                                      # (831b9b4), not a DD behavior change.
                                      "scripts",
@@ -379,7 +439,13 @@ check("no unexpected top-level files added under repo root",
                                      # evidence_analyst_acceptance_cs01.py writes its
                                      # diagnostic JSON artifacts into -- may or may not exist
                                      # on disk depending on whether it's been run locally.
-                                     "evidence_acceptance_runs"} == set())
+                                     "evidence_acceptance_runs",
+                                     # intelligence_pass2_acceptance_runs/: gitignored output
+                                     # directory intelligence_pass2_acceptance_cs01.py writes
+                                     # its diagnostic JSON artifacts into -- may or may not
+                                     # exist on disk depending on whether it's been run
+                                     # locally.
+                                     "intelligence_pass2_acceptance_runs"} == set())
 
 # ---------------------------------------------------------------------------
 # Summary
