@@ -356,6 +356,202 @@ check("Q2. call failure reported via failure_reason, not raised",
 check("Q3. call failure outcome is not valid", not outcome3.is_valid)
 
 # ===========================================================================
+# S. Failed-response observability fix: per-attempt diagnostics survive a
+# JSON parse failure, a transport failure, and a validation failure, and
+# are never destroyed when a later attempt also fails. No live Anthropic
+# call is made anywhere below -- ca.requests.post is monkeypatched.
+# ===========================================================================
+
+
+def _fake_post_factory(*, text, stop_reason="end_turn", stop_sequence=None,
+                        usage=None, raise_http_error=False):
+    """Builds a fake requests.post replacement that returns a Messages-API
+    -shaped response carrying the given raw text/metadata, OR raises a
+    requests-style transport error (no response body at all) when
+    raise_http_error=True."""
+    def _fake_post(url, headers=None, json=None, timeout=None):
+        if raise_http_error:
+            raise ca.requests.exceptions.ConnectionError("simulated transport failure")
+        return _FakeResponse({
+            "content": [{"type": "text", "text": text}],
+            "stop_reason": stop_reason,
+            "stop_sequence": stop_sequence,
+            "model": ca.CORPUS_ANALYST_MODEL,
+            "usage": usage or {"input_tokens": 111, "output_tokens": 222},
+        })
+    return _fake_post
+
+
+# S1/S2/S3: a single attempt whose response is truncated/malformed JSON --
+# raw_text is preserved, non-empty, length matches, and parse_succeeded is
+# False, exactly the node02 symptom (response received, parse failed).
+_truncated_text = '{"reporting_period": {"start": "2099-01-01", "end": "2099-01-07"'  # unterminated
+_orig_post = ca.requests.post
+ca.requests.post = _fake_post_factory(text=_truncated_text, stop_reason="max_tokens")
+try:
+    raw1, diag1, err1 = ca._run_single_attempt(
+        1, {"reporting_period": {}, "observations": []}, "fake-key",
+        ca.call_anthropic_corpus_analyst,
+    )
+finally:
+    ca.requests.post = _orig_post
+
+check("S1. raw text is preserved on a JSON parse failure", diag1.raw_text == _truncated_text)
+check("S2. raw_text_length matches the preserved raw text's length",
+      diag1.raw_text_length == len(_truncated_text))
+check("S3. parse_succeeded is False and parse_error is populated on parse failure",
+      diag1.parse_succeeded is False and diag1.parse_error, str(diag1.parse_error))
+check("S3b. request_succeeded is True on a parse failure (a response WAS received)",
+      diag1.request_succeeded is True)
+check("S3c. raw (parsed) result is None when parsing failed", raw1 is None and err1 is not None)
+
+# S4/S5/S6: stop_reason, stop_sequence, and token usage are captured when
+# the model response provides them -- including on the parse-failure path
+# above (stop_reason == "max_tokens" is the direct truncation signal).
+check("S4. stop_reason captured on a parse-failure attempt", diag1.stop_reason == "max_tokens")
+
+_orig_post = ca.requests.post
+ca.requests.post = _fake_post_factory(
+    text='{"unterminated": "oops',
+    stop_reason="stop_sequence",
+    stop_sequence="\n\nEND",
+    usage={"input_tokens": 333, "output_tokens": 444},
+)
+try:
+    raw1b, diag1b, err1b = ca._run_single_attempt(
+        2, {"reporting_period": {}, "observations": []}, "fake-key",
+        ca.call_anthropic_corpus_analyst,
+    )
+finally:
+    ca.requests.post = _orig_post
+
+check("S5. stop_sequence captured when the model response provides one",
+      diag1b.stop_sequence == "\n\nEND")
+check("S6. input_tokens/output_tokens captured from usage",
+      diag1b.input_tokens == 333 and diag1b.output_tokens == 444)
+
+# S7: both configured attempts failing (both parse failures) means BOTH
+# attempts' diagnostics are present afterward -- attempt 1's record is not
+# overwritten or discarded when attempt 2 also fails.
+_orig_post = ca.requests.post
+ca.requests.post = _fake_post_factory(text='{"still": "broken', stop_reason="max_tokens")
+try:
+    outcome_both_fail = ca.run_corpus_analysis(
+        fixture_corpus, api_key="fake", call_analyst=ca.call_anthropic_corpus_analyst,
+    )
+finally:
+    ca.requests.post = _orig_post
+
+check("S7a. both-fail outcome records exactly 2 attempts",
+      len(outcome_both_fail.attempts) == 2, str(len(outcome_both_fail.attempts)))
+check("S7b. attempt 1's diagnostics survive after attempt 2 also fails",
+      outcome_both_fail.attempts[0].attempt_number == 1
+      and outcome_both_fail.attempts[0].raw_text == '{"still": "broken')
+check("S7c. attempt 2's diagnostics are also present and distinct from attempt 1",
+      outcome_both_fail.attempts[1].attempt_number == 2
+      and outcome_both_fail.attempts[1].raw_text == '{"still": "broken')
+check("S7d. outcome.raw is still None on total failure (unchanged existing behavior)",
+      outcome_both_fail.raw is None)
+check("S7e. outcome.failure_reason is still corpus_analyst_call_failed (unchanged)",
+      outcome_both_fail.failure_reason == "corpus_analyst_call_failed")
+
+# S8: a SUCCESSFUL parse (via the real call_anthropic_corpus_analyst, not
+# a legacy plain-dict stub) still records diagnostic metadata -- diagnosing
+# failures should not be the only path that gets instrumentation.
+_orig_post = ca.requests.post
+ca.requests.post = _fake_post_factory(
+    text=json.dumps(make_valid_output()), stop_reason="end_turn",
+    usage={"input_tokens": 50, "output_tokens": 75},
+)
+try:
+    outcome_success = ca.run_corpus_analysis(
+        fixture_corpus, api_key="fake", call_analyst=ca.call_anthropic_corpus_analyst,
+    )
+finally:
+    ca.requests.post = _orig_post
+
+check("S8a. successful outcome still records exactly 1 attempt",
+      len(outcome_success.attempts) == 1, str(len(outcome_success.attempts)))
+check("S8b. successful attempt's diagnostics include stop_reason/usage",
+      outcome_success.attempts[0].stop_reason == "end_turn"
+      and outcome_success.attempts[0].input_tokens == 50
+      and outcome_success.attempts[0].output_tokens == 75)
+check("S8c. successful outcome.raw is unchanged / still the parsed dict",
+      outcome_success.raw == make_valid_output())
+check("S8d. successful outcome.is_valid is unchanged (True)", outcome_success.is_valid)
+
+# S9: a JSON payload that PARSES but FAILS schema validation is
+# distinguishable from a parse failure -- parse_succeeded True,
+# validation_succeeded False, with validation_errors populated.
+_invalid_output = make_valid_output()
+_invalid_output["candidate_stories"][0]["supporting_document_numbers"] = ["9999-99999"]
+_orig_post = ca.requests.post
+ca.requests.post = _fake_post_factory(text=json.dumps(_invalid_output), stop_reason="end_turn")
+try:
+    outcome_invalid = ca.run_corpus_analysis(
+        fixture_corpus, api_key="fake", call_analyst=ca.call_anthropic_corpus_analyst,
+    )
+finally:
+    ca.requests.post = _orig_post
+
+check("S9a. schema-invalid-but-parseable output is NOT retried (matches pre-existing "
+      "behavior: only a call/parse failure triggers a retry, never a validation failure)",
+      len(outcome_invalid.attempts) == 1, str(len(outcome_invalid.attempts)))
+check("S9b. parse_succeeded True but validation_succeeded False on the invalid-schema attempt",
+      outcome_invalid.attempts[0].parse_succeeded is True
+      and outcome_invalid.attempts[0].validation_succeeded is False
+      and outcome_invalid.attempts[0].validation_errors)
+check("S9c. outcome.validation_status is invalid (unchanged existing behavior)",
+      outcome_invalid.validation_status == "invalid")
+
+# S10: a transport/network failure (no response body at all) is
+# distinguishable from a parse failure -- transport_error is set, and
+# raw_text/stop_reason/usage stay None rather than being fabricated.
+_orig_post = ca.requests.post
+ca.requests.post = _fake_post_factory(text="unused", raise_http_error=True)
+try:
+    raw_t, diag_t, err_t = ca._run_single_attempt(
+        1, {"reporting_period": {}, "observations": []}, "fake-key",
+        ca.call_anthropic_corpus_analyst,
+    )
+finally:
+    ca.requests.post = _orig_post
+
+check("S10a. transport failure sets request_succeeded False", diag_t.request_succeeded is False)
+check("S10b. transport failure sets transport_error", bool(diag_t.transport_error))
+check("S10c. transport failure leaves raw_text/stop_reason/usage as None (not fabricated)",
+      diag_t.raw_text is None and diag_t.stop_reason is None
+      and diag_t.input_tokens is None and diag_t.output_tokens is None)
+
+# S11: no credential material is ever present in a diagnostics record,
+# even as a substring of raw_text or any other field, for either a
+# successful or a failed attempt.
+for _diag in (diag1, diag1b, diag_t, outcome_success.attempts[0], outcome_invalid.attempts[0]):
+    _diag_dict = _diag.to_dict()
+    _serialized = json.dumps(_diag_dict, default=str)
+    check(f"S11. no API key/Authorization material in attempt {_diag.attempt_number} diagnostics",
+          "fake-key" not in _serialized and "x-api-key" not in _serialized.lower()
+          and "authorization" not in _serialized.lower())
+
+# S12: existing CorpusAnalysisOutcome public fields behave exactly as
+# before this fix, for both the success and total-failure paths (already
+# exercised above by outcome_success/outcome_both_fail) -- explicit
+# regression check on the exact field set a pre-existing caller relies on.
+check("S12a. success path: raw/validation_status/validation_errors/failure_reason unchanged shape",
+      isinstance(outcome_success.raw, dict) and outcome_success.validation_status == "valid"
+      and outcome_success.validation_errors == [] and outcome_success.failure_reason is None)
+check("S12b. total-failure path: raw/validation_status/failure_reason unchanged shape",
+      outcome_both_fail.raw is None and outcome_both_fail.validation_status == "invalid"
+      and outcome_both_fail.failure_reason == "corpus_analyst_call_failed")
+
+# S13: attempt_number sequencing is correct and sequential starting at 1
+# in both the success-on-first-try and both-fail cases.
+check("S13a. success-on-first-try: single attempt numbered 1",
+      [a.attempt_number for a in outcome_success.attempts] == [1])
+check("S13b. both-fail: attempts numbered 1 then 2, in order",
+      [a.attempt_number for a in outcome_both_fail.attempts] == [1, 2])
+
+# ===========================================================================
 # Summary
 # ===========================================================================
 failed = [r for r in results if r[1] == "FAIL"]

@@ -35,6 +35,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 import requests
@@ -273,9 +274,22 @@ class CorpusAnalystJSONDecodeError(ValueError):
         self.response_meta = response_meta
 
 
-def call_anthropic_corpus_analyst(corpus_payload: dict, api_key: str) -> dict:
+def call_anthropic_corpus_analyst(corpus_payload: dict, api_key: str):
     """Real Corpus Analyst call. No tools -- this role gets no web_search
-    and no other tool; it sees only the supplied corpus payload."""
+    and no other tool; it sees only the supplied corpus payload.
+
+    Returns (parsed_json, raw_text, response_meta) on success -- the raw
+    text and response metadata (stop_reason, stop_sequence, usage, etc.)
+    are surfaced even when parsing succeeds, so run_corpus_analysis can
+    record per-attempt diagnostics uniformly on every attempt, not only
+    failed ones. response_meta/raw_text never contain the API key,
+    Authorization header, or any other credential material -- only the
+    model's own response content and metadata fields.
+
+    On a JSON parse failure, raises CorpusAnalystJSONDecodeError carrying
+    the same raw_text/content_blocks/response_meta instead of returning
+    them -- the caller (run_corpus_analysis) recovers them via the
+    exception's attributes (see _run_single_attempt)."""
     resp = requests.post(
         "https://api.anthropic.com/v1/messages",
         headers={
@@ -295,21 +309,100 @@ def call_anthropic_corpus_analyst(corpus_payload: dict, api_key: str) -> dict:
     response_json = resp.json()
     content = response_json["content"]
     text = _extract_json_text(content)
+
+    # Built once, used on both the success path (returned) and the
+    # failure path (attached to the raised exception) -- this is the
+    # fix for stop_sequence previously being absent from response_meta.
+    response_meta = {
+        "stop_reason": response_json.get("stop_reason"),
+        "stop_sequence": response_json.get("stop_sequence"),
+        "model": response_json.get("model"),
+        "usage": response_json.get("usage"),
+        "content_block_count": len(content) if isinstance(content, list) else None,
+        "content_block_types": (
+            [b.get("type") for b in content] if isinstance(content, list) else None
+        ),
+    }
+
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
     except json.JSONDecodeError as e:
-        response_meta = {
-            "stop_reason": response_json.get("stop_reason"),
-            "model": response_json.get("model"),
-            "usage": response_json.get("usage"),
-            "content_block_count": len(content) if isinstance(content, list) else None,
-            "content_block_types": (
-                [b.get("type") for b in content] if isinstance(content, list) else None
-            ),
-        }
         raise CorpusAnalystJSONDecodeError(
             e, raw_text=text, content_blocks=content, response_meta=response_meta
         ) from e
+
+    return parsed, text, response_meta
+
+
+@dataclass
+class CorpusAnalystAttemptDiagnostics:
+    """Diagnostic record for ONE attempt inside run_corpus_analysis's retry
+    loop. Captured for every attempt -- success or failure -- so a JSON
+    parse failure never destroys what the model actually returned. This
+    is purely additive: it exists to let a human/tooling determine, after
+    the fact, whether a failed attempt was a max_tokens truncation, some
+    other stop condition, malformed-but-complete JSON, or a transport/API
+    problem -- it does not change run_corpus_analysis's existing raw /
+    validation_status / validation_errors / failure_reason / is_valid
+    behavior.
+
+    request_succeeded distinguishes "a response body was received from
+    the model" (even if parsing/validation then failed) from "the call
+    itself failed before any response body existed" (network error, HTTP
+    error, timeout raised by requests). In the latter case the
+    Anthropic-specific fields (stop_reason, stop_sequence, input_tokens,
+    output_tokens, raw_text) are genuinely unavailable and stay None --
+    reported via transport_error rather than fabricated, per the
+    instruction not to invent fields the current implementation cannot
+    expose.
+
+    SECURITY: this record never carries ANTHROPIC_API_KEY, the
+    Authorization/x-api-key header, or any other credential material --
+    only the configured model/max_tokens/timeout (public constants, not
+    secrets) and the model's own response content/metadata.
+    """
+    attempt_number: int
+    model: str
+    max_tokens: int
+    timeout_seconds: int
+    request_succeeded: bool = False
+    stop_reason: Optional[str] = None
+    stop_sequence: Optional[str] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    raw_text: Optional[str] = None
+    raw_text_length: Optional[int] = None
+    parse_succeeded: Optional[bool] = None
+    parse_error: Optional[str] = None
+    validation_succeeded: Optional[bool] = None
+    validation_errors: list = field(default_factory=list)
+    transport_error: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    duration_seconds: Optional[float] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "attempt_number": self.attempt_number,
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "timeout_seconds": self.timeout_seconds,
+            "request_succeeded": self.request_succeeded,
+            "stop_reason": self.stop_reason,
+            "stop_sequence": self.stop_sequence,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "raw_text": self.raw_text,
+            "raw_text_length": self.raw_text_length,
+            "parse_succeeded": self.parse_succeeded,
+            "parse_error": self.parse_error,
+            "validation_succeeded": self.validation_succeeded,
+            "validation_errors": self.validation_errors,
+            "transport_error": self.transport_error,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "duration_seconds": self.duration_seconds,
+        }
 
 
 @dataclass
@@ -318,15 +411,111 @@ class CorpusAnalysisOutcome:
     any), the deterministic validation result, and a failure_reason set
     only on a pipeline-level (non-analytical) failure -- never on a
     structurally-valid-but-"wrong" hypothesis, which this layer has no
-    way to detect and does not attempt to."""
+    way to detect and does not attempt to.
+
+    attempts carries one CorpusAnalystAttemptDiagnostics per attempt made
+    (in order, never overwritten -- attempt 1's record survives even if
+    attempt 2 is made and also fails), added purely for post-hoc failure
+    diagnosis. This field is additive: every other field's meaning and
+    population logic is unchanged from before this diagnostics fix."""
     raw: Optional[dict] = None
     validation_status: str = "invalid"   # "valid" | "invalid"
     validation_errors: list = field(default_factory=list)
     failure_reason: Optional[str] = None  # set on call/parse failure only
+    attempts: list = field(default_factory=list)  # list[CorpusAnalystAttemptDiagnostics]
 
     @property
     def is_valid(self) -> bool:
         return self.validation_status == "valid"
+
+
+def _run_single_attempt(attempt_number: int, corpus_payload: dict, api_key: Optional[str],
+                         caller: Callable):
+    """Run exactly one caller(corpus_payload, api_key) attempt and return
+    (raw_or_None, CorpusAnalystAttemptDiagnostics, error_or_None).
+
+    Captures the raw response text and response metadata BEFORE/REGARDLESS
+    OF JSON parsing outcome:
+      - on success, caller (the real call_anthropic_corpus_analyst) returns
+        (parsed, raw_text, response_meta) -- all three are recorded;
+      - on a JSON parse failure, caller raises CorpusAnalystJSONDecodeError,
+        which already carries raw_text/response_meta/content_blocks from
+        BEFORE the json.loads() call that failed -- those are read off the
+        exception via getattr, never reconstructed or guessed;
+      - on any other exception (network error, HTTP error, timeout, or a
+        legacy test stub that just raises), no response body exists, so
+        the Anthropic-specific fields stay None and transport_error is set
+        instead -- distinguishable from a parse failure by the presence
+        (or absence) of raw_text/response_meta on the exception.
+
+    A caller (e.g. an existing test stub) that returns a plain dict rather
+    than a (parsed, raw_text, response_meta) tuple is still supported --
+    raw_text/response_meta are simply unavailable for that attempt, never
+    fabricated.
+    """
+    started = datetime.now(timezone.utc)
+    diag = CorpusAnalystAttemptDiagnostics(
+        attempt_number=attempt_number,
+        model=CORPUS_ANALYST_MODEL,
+        max_tokens=CORPUS_ANALYST_MAX_TOKENS,
+        timeout_seconds=CORPUS_ANALYST_TIMEOUT_SECONDS,
+        started_at=started.isoformat(),
+    )
+
+    def _finish():
+        finished = datetime.now(timezone.utc)
+        diag.finished_at = finished.isoformat()
+        diag.duration_seconds = (finished - started).total_seconds()
+
+    def _apply_response_meta(response_meta):
+        if not response_meta:
+            return
+        diag.stop_reason = response_meta.get("stop_reason")
+        diag.stop_sequence = response_meta.get("stop_sequence")
+        usage = response_meta.get("usage") or {}
+        diag.input_tokens = usage.get("input_tokens")
+        diag.output_tokens = usage.get("output_tokens")
+
+    try:
+        result = caller(corpus_payload, api_key)
+    except Exception as e:  # network error, HTTP error, JSON parse error, stub failure
+        _finish()
+        raw_text = getattr(e, "raw_text", None)
+        response_meta = getattr(e, "response_meta", None)
+        if raw_text is not None or response_meta is not None:
+            # A response body WAS received (e.g. CorpusAnalystJSONDecodeError)
+            # -- parsing/validation failed, not the request itself. The raw
+            # text is preserved here, exactly as captured before the failed
+            # json.loads() call -- never reconstructed or re-derived.
+            diag.request_succeeded = True
+            diag.raw_text = raw_text
+            diag.raw_text_length = len(raw_text) if raw_text is not None else None
+            diag.parse_succeeded = False
+            diag.parse_error = str(e)
+            _apply_response_meta(response_meta)
+        else:
+            # No response body available at all -- a transport/API-level
+            # failure (or a legacy stub that simply raises).
+            diag.request_succeeded = False
+            diag.transport_error = str(e)
+        return None, diag, e
+
+    _finish()
+    diag.request_succeeded = True
+    diag.parse_succeeded = True
+
+    if isinstance(result, tuple) and len(result) == 3:
+        raw, raw_text, response_meta = result
+    else:
+        # Legacy/test-stub shape: a bare dict, no diagnostic metadata
+        # available for this attempt -- not fabricated.
+        raw, raw_text, response_meta = result, None, None
+
+    diag.raw_text = raw_text
+    diag.raw_text_length = len(raw_text) if raw_text is not None else None
+    _apply_response_meta(response_meta)
+
+    return raw, diag, None
 
 
 def run_corpus_analysis(corpus: Corpus, *, api_key: Optional[str] = None,
@@ -347,6 +536,11 @@ def run_corpus_analysis(corpus: Corpus, *, api_key: Optional[str] = None,
         corpus_analysis against the exact document-number set present in
         `corpus`, so a model-invented document number is always caught
         regardless of how plausible it looks.
+      - records one CorpusAnalystAttemptDiagnostics per attempt made
+        (success or failure) onto the returned outcome's `attempts` list,
+        so a failed run remains inspectable afterward -- this is additive
+        and does not change the meaning of raw/validation_status/
+        validation_errors/failure_reason/is_valid below.
 
     Never raises on a model/network/parse failure -- those are caught,
     logged, and reported via the returned CorpusAnalysisOutcome.
@@ -356,32 +550,46 @@ def run_corpus_analysis(corpus: Corpus, *, api_key: Optional[str] = None,
     api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     caller = call_analyst or call_anthropic_corpus_analyst
     corpus_payload = corpus.to_dict()
+    valid_document_numbers = {
+        o.document_number for o in corpus.observations if o.document_number is not None
+    }
 
+    attempts = []
     raw = None
     last_error = None
-    for attempt in range(1, CORPUS_ANALYST_MAX_ATTEMPTS + 1):
-        try:
-            raw = caller(corpus_payload, api_key)
+    last_validation_result = None
+    for attempt_number in range(1, CORPUS_ANALYST_MAX_ATTEMPTS + 1):
+        attempt_raw, diag, err = _run_single_attempt(attempt_number, corpus_payload, api_key, caller)
+        if err is None:
+            # Parsing succeeded on this attempt -- validate immediately so
+            # THIS attempt's diagnostics record whether validation (not
+            # just parsing) succeeded, distinguishing a schema-invalid
+            # output from a JSON-parse failure.
+            result = schema.validate_corpus_analysis(attempt_raw, valid_document_numbers)
+            diag.validation_succeeded = result.is_valid
+            diag.validation_errors = result.validation_errors
+            attempts.append(diag)
+            raw = attempt_raw
             last_error = None
+            last_validation_result = result
             break
-        except Exception as e:  # network error, HTTP error, JSON parse error
-            last_error = e
+        else:
+            attempts.append(diag)
+            last_error = err
             log.warning("Corpus Analyst attempt %d/%d failed: %s",
-                        attempt, CORPUS_ANALYST_MAX_ATTEMPTS, e)
+                        attempt_number, CORPUS_ANALYST_MAX_ATTEMPTS, err)
 
     if last_error is not None:
         return CorpusAnalysisOutcome(
             raw=None, validation_status="invalid",
             validation_errors=[f"corpus_analyst_call_failed: {last_error}"],
             failure_reason="corpus_analyst_call_failed",
+            attempts=attempts,
         )
 
-    valid_document_numbers = {
-        o.document_number for o in corpus.observations if o.document_number is not None
-    }
-    result = schema.validate_corpus_analysis(raw, valid_document_numbers)
     return CorpusAnalysisOutcome(
         raw=raw,
-        validation_status="valid" if result.is_valid else "invalid",
-        validation_errors=result.validation_errors,
+        validation_status="valid" if last_validation_result.is_valid else "invalid",
+        validation_errors=last_validation_result.validation_errors,
+        attempts=attempts,
     )
