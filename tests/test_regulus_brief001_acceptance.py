@@ -633,6 +633,114 @@ check("H5d. the stale legacy-migrated record itself is untouched by the candidat
 conn_h5.close()
 
 # ===========================================================================
+# I. --story-id targeted execution: dry-run reporting requirements and the
+# early, zero-cost fail-closed check (see tests/test_regulus_orchestrator.py
+# for the LIVE-run/orchestrator-level composition proof, using injected
+# stage stubs -- that stays out of THIS file because a genuinely-live
+# run_acceptance() call here would trip this file's own network guard for
+# its one permitted new call, even though it's correctly budget-permitted,
+# tainting this file's own "no real network POST" isolation check below).
+# ===========================================================================
+
+# I1-I6: the EXACT documented scenario -- bootstrapped Corpus Analyst
+# (full 11 stories) + bootstrapped/reusable CS-01 Evidence + --story-id
+# CS-01 + --dry-run.
+out_dir = _fresh_dir("i1")
+report_i1 = acc.run_acceptance(
+    "dryrun-i1", output_dir=out_dir, dry_run=True, story_id="CS-01",
+    corpus_analysis_artifact_path=ACC3_CORPUS_ANALYST_FIXTURE,
+    evidence_analysis_artifact_path=EVIDENCE_CS01_FIXTURE,
+)
+check("I1. selected stories: CS-01 only", report_i1["selected_story_ids"] == ["CS-01"])
+check("I2. Corpus Analyst is reported resolved (reused/bootstrap, zero calls) -- "
+      "candidate_story_count still reflects the FULL, unfiltered corpus bootstrap (11)",
+      report_i1["corpus_analyst"]["resolved"] is True
+      and report_i1["corpus_analyst"]["candidate_story_count"] == len(ACC3_STORY_IDS))
+check("I3. report['stories'] contains ONLY CS-01 -- CS-02..CS-11 are not reported on at all",
+      [s["story_id"] for s in report_i1["stories"]] == ["CS-01"])
+check("I4. CS-01 Evidence Analyst: would_reuse, zero calls; CS-01 Pass #2: would_call",
+      report_i1["stories"][0]["evidence_analyst"] == "would_reuse"
+      and report_i1["stories"][0]["pass2"] == "would_call")
+check("I5. Editor: skipped because targeted partial-story run",
+      report_i1["would_call_editor"] is False
+      and report_i1["editor_skipped_reason"] == "targeted_partial_story_run")
+check("I6. maximum NEW external LLM requests for this invocation: 1 -- reflecting that "
+      "ONLY Pass #2 is unresolved (Corpus Analyst and Evidence Analyst are both reused)",
+      report_i1["max_new_external_llm_requests"] == 1)
+
+# I7: an unknown --story-id, with Corpus Analyst output ALREADY known
+# (bootstrapped this invocation), fails closed via UnknownStoryIdError --
+# BEFORE the Evidence Analyst bootstrap, before --dry-run resolves
+# anything, before any API call (dry-run never makes one anyway, but the
+# exception must still fire, not merely report "stories": []).
+out_dir = _fresh_dir("i7")
+raised = None
+try:
+    acc.run_acceptance(
+        "dryrun-i7", output_dir=out_dir, dry_run=True, story_id="CS-99-DOES-NOT-EXIST",
+        corpus_analysis_artifact_path=ACC3_CORPUS_ANALYST_FIXTURE,
+        evidence_analysis_artifact_path=EVIDENCE_CS01_FIXTURE,
+    )
+except acc.UnknownStoryIdError as e:
+    raised = e
+check("I7. an unknown --story-id raises UnknownStoryIdError, fails closed, with Corpus "
+      "Analyst output already known", raised is not None)
+# The Evidence Analyst bootstrap must never have been reached/persisted --
+# the story_id check happens strictly BEFORE it.
+db_files_i7 = [p for p in os.listdir(out_dir) if p.endswith(".db")]
+check("I7b. the Corpus Analyst bootstrap (which runs first) IS persisted, but no "
+      "evidence_analyst row exists for CS-01 -- the evidence bootstrap never ran",
+      len(db_files_i7) == 1
+      and store.load_story_artifact("dryrun-i7", "CS-01", "evidence_analyst",
+                                     db_path=os.path.join(out_dir, db_files_i7[0])) is None)
+
+# I8: an unknown --story-id also fails closed directly against
+# _dry_run_report's own validation (the same exception, same zero-cost
+# guarantee, reached if a caller ever invokes it without going through
+# run_acceptance's own earlier check -- defense in depth, proven here so
+# the two can never silently diverge).
+out_dir = _fresh_dir("i8")
+raised = None
+try:
+    acc.run_acceptance(
+        "dryrun-i8b", output_dir=out_dir, dry_run=True,
+        corpus_analysis_artifact_path=ACC3_CORPUS_ANALYST_FIXTURE,
+    )  # first, bootstrap WITHOUT --story-id so db_path has known corpus output
+except Exception:
+    pass
+db_files_i8 = [p for p in os.listdir(out_dir) if p.endswith(".db")]
+existing_db_path_i8 = os.path.join(out_dir, db_files_i8[0])
+raised = None
+try:
+    acc._dry_run_report(
+        "dryrun-i8b", db_path=existing_db_path_i8,
+        budget=orch.RunBudget(), circuit_breaker=orch.CircuitBreaker(), story_id="CS-99-DOES-NOT-EXIST",
+    )
+except acc.UnknownStoryIdError as e:
+    raised = e
+check("I8. _dry_run_report itself also fails closed on an unknown story_id, "
+      "independent of run_acceptance's own earlier check", raised is not None)
+
+# I9-I11: omitting --story-id preserves existing behavior -- a dry run
+# with the SAME bootstrap inputs but story_id=None reports every story
+# (unchanged from the pre-existing G1-G3 behavior), never narrows to one,
+# and never sets any of the new targeted-mode-only fields.
+out_dir = _fresh_dir("i9")
+report_i9 = acc.run_acceptance(
+    "dryrun-i9", output_dir=out_dir, dry_run=True,  # story_id omitted entirely
+    corpus_analysis_artifact_path=ACC3_CORPUS_ANALYST_FIXTURE,
+    evidence_analysis_artifact_path=EVIDENCE_CS01_FIXTURE,
+)
+check("I9. omitting --story-id reports every candidate story, not just one",
+      {s["story_id"] for s in report_i9["stories"]} == set(ACC3_STORY_IDS))
+check("I10. omitting --story-id never sets editor_skipped_reason/"
+      "max_new_external_llm_requests -- those are targeted-mode-only fields",
+      "editor_skipped_reason" not in report_i9 and "max_new_external_llm_requests" not in report_i9)
+check("I11. omitting --story-id leaves would_call_editor computed the ORIGINAL way "
+      "(True here, since CS-01's Pass #2 is unresolved and thus 'any_would_call_editor_input')",
+      report_i9["would_call_editor"] is True)
+
+# ===========================================================================
 # E. Isolation / no real network call anywhere in this file
 # ===========================================================================
 check("E1. no real network POST was attempted anywhere in this test file",

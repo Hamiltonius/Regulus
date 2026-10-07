@@ -128,6 +128,174 @@ class EvidenceAnalysisArtifactInvalidError(ValueError):
     function's own docstring for the full compatibility chain."""
 
 
+class UnknownStoryIdError(ValueError):
+    """Raised by --story-id targeted-execution filtering when the
+    requested story_id does not match any candidate_story in the
+    CURRENTLY KNOWN Corpus Analyst output for this run_id (known from a
+    --corpus-analysis-artifact bootstrapped THIS invocation, or from
+    corpus_analyst-stage rows already persisted at --db-path from a
+    prior invocation of the same --run-id).
+
+    Raised BEFORE any API call whenever that output is already known --
+    which, per this feature's scope, is the ONLY case --story-id is
+    exercised against (the documented, immediate use: a bootstrapped
+    Corpus Analyst artifact). story_id alone is matched against the
+    EXACT SAME candidate_story.story_id values a live/bootstrapped
+    Corpus Analyst Pass #1 would produce -- there is no separate/looser
+    story-identity rule for this feature."""
+
+
+def _known_candidate_stories(run_id: str, db_path: str) -> list:
+    """Return every VALID candidate_story dict already persisted for
+    `run_id` at the corpus_analyst stage of the intelligence store at
+    `db_path`, or None if db_path does not exist yet or nothing is
+    persisted there for this run_id -- i.e. Corpus Analyst output is NOT
+    yet known, without making any API/network call either way. Used by
+    --story-id targeted execution to validate the requested story_id,
+    and to compute its own call-budget ceiling, using the SAME source of
+    truth --dry-run reporting already uses (store.list_story_artifacts),
+    never a parallel/bespoke lookup."""
+    if not os.path.exists(db_path):
+        return None
+    conn = store.get_connection(db_path)
+    try:
+        persisted = store.list_story_artifacts(run_id, stage="corpus_analyst", conn=conn)
+    finally:
+        conn.close()
+    if not persisted:
+        return None
+    return [rec.payload for rec in persisted if rec.is_valid]
+
+
+def _require_known_story_id(candidate_stories: list, story_id: str) -> dict:
+    """Return the single candidate_story dict in `candidate_stories`
+    whose story_id matches `story_id`, or raise UnknownStoryIdError
+    (fail closed) if none matches. story_id alone is matched exactly --
+    no fuzzy/partial matching, no fallback to "process everything" on a
+    miss."""
+    for candidate_story in candidate_stories:
+        if candidate_story.get("story_id") == story_id:
+            return candidate_story
+    raise UnknownStoryIdError(
+        f"--story-id {story_id!r} does not match any candidate_story in the current, known "
+        f"Corpus Analyst output for this run (known story_ids: "
+        f"{[cs.get('story_id') for cs in candidate_stories]!r}) -- fails closed: no Evidence "
+        f"Analyst, Pass #2, or Editor call will be made for any story this invocation."
+    )
+
+
+def build_targeted_call_corpus_analyst(underlying_caller, story_id: str):
+    """Wrap `underlying_caller` (the real live Corpus Analyst caller, or
+    a --corpus-analysis-artifact bootstrap substitution) so that, AFTER
+    it returns its (unfiltered) raw result but BEFORE run_intelligence_
+    cycle (regulus_orchestrator.py -- never edited) ever reads
+    candidate_stories from it, that list is narrowed to the single
+    candidate_story whose story_id matches `story_id`. Raises
+    UnknownStoryIdError -- fail closed -- if no candidate_story matches;
+    this is the ONLY place that check is still possible when Corpus
+    Analyst output was not already known before the call (the early,
+    zero-cost check in run_acceptance() covers every other case).
+    Returned callable has the exact (corpus_payload, api_key) signature
+    every call_corpus_analyst caller must have."""
+    def _wrapped(corpus_payload, api_key):  # noqa: ARG001 -- signature match
+        raw = underlying_caller(corpus_payload, api_key)
+        if isinstance(raw, dict) and isinstance(raw.get("candidate_stories"), list):
+            raw = dict(raw)
+            raw["candidate_stories"] = [_require_known_story_id(raw["candidate_stories"], story_id)]
+        return raw
+    return _wrapped
+
+
+def build_targeted_circuit_breaker(circuit_breaker: "orch.CircuitBreaker") -> "orch.CircuitBreaker":
+    """Build a DEDICATED CircuitBreaker, already triggered, for --story-id
+    targeted execution -- never the caller's own `circuit_breaker`
+    instance/state. The Editor must NEVER run for a targeted
+    partial-story invocation, regardless of how many new calls the
+    selected story actually needed (even zero): run_intelligence_cycle
+    (regulus_orchestrator.py -- never edited) already has an EXISTING,
+    unmodified "stopped_reason -> skip the Editor entirely" path, taken
+    whenever circuit_breaker.triggered is true after a story is
+    processed -- so constructing it pre-triggered (same
+    consecutive_failure_threshold, for reporting fidelity only; the
+    threshold is otherwise moot with exactly one story in play) makes
+    that path fire deterministically, with zero orchestrator changes."""
+    return orch.CircuitBreaker(
+        consecutive_failure_threshold=circuit_breaker.consecutive_failure_threshold,
+        triggered=True,
+    )
+
+
+def compute_targeted_budget(budget: "orch.RunBudget", targeted_new_call_cap: int) -> "orch.RunBudget":
+    """Build the EFFECTIVE run budget for a --story-id targeted
+    invocation whose Corpus Analyst output is already known (so its own
+    budget consumption is deterministically exactly one unit -- see
+    run_acceptance()'s corpus-bootstrap docstring note): max_total_llm_
+    calls is tightened to exactly `targeted_new_call_cap` (the number of
+    NOT-yet-reusable Evidence Analyst/Pass #2 stages for the selected
+    story) plus 1 reserved for that deterministic corpus unit -- unless
+    the caller's OWN configured max_total_llm_calls is already tighter,
+    in which case it is never loosened. max_evidence_analyst_calls and
+    max_evidence_attempts_per_story are passed through completely
+    unchanged -- this feature only ever tightens max_total_llm_calls."""
+    internal_cap = 1 + targeted_new_call_cap
+    capped_total = (
+        internal_cap if budget.max_total_llm_calls is None
+        else min(budget.max_total_llm_calls, internal_cap)
+    )
+    return orch.RunBudget(
+        max_total_llm_calls=capped_total,
+        max_evidence_analyst_calls=budget.max_evidence_analyst_calls,
+        max_evidence_attempts_per_story=budget.max_evidence_attempts_per_story,
+    )
+
+
+def _resolve_story_reuse_state(run_id: str, candidate_story: dict, *, conn) -> dict:
+    """Determine, for ONE candidate_story and WITHOUT making any
+    API/network call, whether its Evidence Analyst and Pass #2 stages
+    are already reusable under `run_id` -- via intelligence_store.
+    find_reusable_story_artifact(), the orchestrator's OWN existing
+    lookup, never a parallel/bespoke rule -- and how many NEW external
+    LLM requests remain possible for it (0, 1, or 2: one per stage that
+    is NOT yet reusable). Shared by both the general --dry-run report
+    (every story) and --story-id targeted execution (one story only),
+    so the two can never diverge on what "would_reuse"/"would_call"
+    means for a given story."""
+    story_id = candidate_story.get("story_id", "UNKNOWN")
+    evidence_fingerprint = store.compute_fingerprint(candidate_story)
+    reusable_evidence = store.find_reusable_story_artifact(
+        run_id, story_id, "evidence_analyst", evidence_fingerprint, conn=conn,
+    )
+    new_calls_needed = 0
+    if reusable_evidence is not None:
+        evidence_state = "would_reuse"
+        evidence_payload = reusable_evidence.payload
+    else:
+        evidence_state = "would_call"
+        evidence_payload = None
+        new_calls_needed += 1
+
+    if evidence_payload is not None:
+        pass2_fingerprint = store.compute_fingerprint(candidate_story, evidence_payload)
+        reusable_pass2 = store.find_reusable_story_artifact(
+            run_id, story_id, "pass2", pass2_fingerprint, conn=conn,
+        )
+        if reusable_pass2 is not None:
+            pass2_state = "would_reuse"
+        else:
+            pass2_state = "would_call"
+            new_calls_needed += 1
+    else:
+        pass2_state = "unknown_pending_evidence_call"
+        new_calls_needed += 1  # conservative: assume it would run too
+
+    return {
+        "story_id": story_id,
+        "evidence_analyst": evidence_state,
+        "pass2": pass2_state,
+        "new_calls_needed": new_calls_needed,
+    }
+
+
 def load_golden_corpus(path: str = CORPUS_FIXTURE_PATH) -> Corpus:
     """Load and reconstruct the REAL corpus_extractor.Corpus used for
     Acceptance #3 from tests/fixtures/corpus_acceptance_3.json. No
@@ -586,7 +754,7 @@ def _print_budget_plan(budget: orch.RunBudget, circuit_breaker: orch.CircuitBrea
 
 
 def _dry_run_report(run_id: str, *, db_path: str, budget: orch.RunBudget,
-                     circuit_breaker: orch.CircuitBreaker) -> dict:
+                     circuit_breaker: orch.CircuitBreaker, story_id: str = None) -> dict:
     """Report what a real run WOULD do, making ZERO API requests.
 
     Loads the corpus (a local, read-only fixture load -- not a model
@@ -600,8 +768,35 @@ def _dry_run_report(run_id: str, *, db_path: str, budget: orch.RunBudget,
     function does not guess or fabricate them; it reports that plainly
     along with the worst-case call volume bound by the configured
     EVIDENCE_ANALYST/PASS2/EDITOR_MAX_ATTEMPTS constants and the budget.
+
+    `story_id` (--story-id) is the SAME explicit, opt-in execution
+    filter run_acceptance() applies to a live run -- see its docstring.
+    Here it only changes what is REPORTED, never what is persisted:
+      - when Corpus Analyst output is already known (the only case this
+        feature targets), an unknown story_id raises UnknownStoryIdError
+        -- fail closed, exactly as a live run would, and just as free of
+        cost (a dry run never makes a call either way);
+      - only story_id's OWN entry appears in report["stories"] (every
+        other story is simply not reported on, not merely marked
+        excluded -- a targeted run never considers them);
+      - report["would_call_editor"] is always False, with
+        report["editor_skipped_reason"] = "targeted_partial_story_run"
+        (the Editor needs every eligible story's Pass #2 output, and a
+        targeted run deliberately never runs any OTHER story's Pass #2)
+        -- this does not depend on whether story_id's own stages are
+        would_reuse or would_call;
+      - report["max_new_external_llm_requests"] is the exact count of
+        NOT-YET-reusable stages for story_id alone (0, 1, or 2) -- the
+        number of genuinely NEW network/model calls this invocation
+        could make, as opposed to max_possible_calls_worst_case's
+        retries-exhausted bound (a different, intentionally more
+        conservative metric, left unchanged here). run_acceptance()
+        enforces this exact number as this invocation's own additional
+        call-budget ceiling on a live run -- see its docstring -- so
+        this reported figure is never merely descriptive.
     """
-    print(f"\n[DRY RUN] run_id={run_id!r} -- no API request will be made.")
+    print(f"\n[DRY RUN] run_id={run_id!r} -- no API request will be made."
+          + (f" --story-id={story_id!r} (targeted partial-story run)" if story_id is not None else ""))
     _print_budget_plan(budget, circuit_breaker, db_path=db_path)
 
     corpus, _ = load_golden_corpus()  # local fixture load only -- no API call
@@ -634,6 +829,11 @@ def _dry_run_report(run_id: str, *, db_path: str, budget: orch.RunBudget,
                     f"(up to {corpus_analyst.CORPUS_ANALYST_MAX_ATTEMPTS} attempts) before anything "
                     "else is knowable",
         }
+        if story_id is not None:
+            report["selected_story_ids"] = [story_id]
+            print(f"  --story-id       : {story_id!r} cannot be resolved yet -- Corpus Analyst "
+                  f"output is unknown without a live call; bootstrap it first (e.g. via "
+                  f"--corpus-analysis-artifact) to validate --story-id at zero cost.")
         # Worst case with zero prior state: Corpus Analyst's own attempts,
         # plus nothing else is computable yet (candidate_stories unknown).
         worst_case = corpus_analyst.CORPUS_ANALYST_MAX_ATTEMPTS
@@ -656,42 +856,62 @@ def _dry_run_report(run_id: str, *, db_path: str, budget: orch.RunBudget,
     report["corpus_analyst"] = {"resolved": True, "candidate_story_count": len(candidate_stories)}
     print(f"  corpus_analyst   : persisted, valid output found ({len(candidate_stories)} candidate stories)")
 
+    if story_id is not None:
+        # --story-id targeted reporting: validate (fail closed, zero
+        # cost) and then report ONLY this one story -- every other
+        # story is simply never considered, not merely marked excluded.
+        target_candidate_story = _require_known_story_id(candidate_stories, story_id)
+        stories_to_report = [target_candidate_story]
+        report["selected_story_ids"] = [story_id]
+        print(f"  selected stories : {story_id} only")
+        print(f"  Corpus Analyst   : reused/bootstrap, zero calls")
+    else:
+        stories_to_report = candidate_stories
+        report["selected_story_ids"] = [cs.get("story_id", "UNKNOWN") for cs in candidate_stories]
+
     worst_case = 0
     any_would_call_editor_input = False
-    for candidate_story in candidate_stories:
-        story_id = candidate_story.get("story_id", "UNKNOWN")
-        evidence_fp = store.compute_fingerprint(candidate_story)
-        reusable_evidence = store.find_reusable_story_artifact(
-            run_id, story_id, "evidence_analyst", evidence_fp, conn=conn,
-        )
-        story_report = {"story_id": story_id}
-        if reusable_evidence is not None:
-            story_report["evidence_analyst"] = "would_reuse"
-            evidence_payload = reusable_evidence.payload
-        else:
-            story_report["evidence_analyst"] = "would_call"
-            evidence_payload = None
-            worst_case += evidence_analyst.EVIDENCE_ANALYST_MAX_ATTEMPTS
+    max_new_external_llm_requests = 0
+    for candidate_story in stories_to_report:
+        state = _resolve_story_reuse_state(run_id, candidate_story, conn=conn)
+        story_id_i = state["story_id"]
+        story_report = {"story_id": story_id_i, "evidence_analyst": state["evidence_analyst"],
+                         "pass2": state["pass2"]}
+        max_new_external_llm_requests += state["new_calls_needed"]
 
-        if evidence_payload is not None:
-            pass2_fp = store.compute_fingerprint(candidate_story, evidence_payload)
-            reusable_pass2 = store.find_reusable_story_artifact(run_id, story_id, "pass2", pass2_fp, conn=conn)
-            if reusable_pass2 is not None:
-                story_report["pass2"] = "would_reuse"
-                any_would_call_editor_input = True
-            else:
-                story_report["pass2"] = "would_call"
-                worst_case += pass2.PASS2_MAX_ATTEMPTS
-                any_would_call_editor_input = True
-        else:
-            story_report["pass2"] = "unknown_pending_evidence_call"
-            worst_case += pass2.PASS2_MAX_ATTEMPTS  # conservative: assume it would run too
+        if state["evidence_analyst"] == "would_call":
+            worst_case += evidence_analyst.EVIDENCE_ANALYST_MAX_ATTEMPTS
+        if state["pass2"] in ("would_call", "unknown_pending_evidence_call"):
+            worst_case += pass2.PASS2_MAX_ATTEMPTS
+        if state["pass2"] in ("would_reuse", "would_call"):
+            any_would_call_editor_input = True
 
         report["stories"].append(story_report)
-        print(f"    - {story_id}: evidence_analyst={story_report['evidence_analyst']}, "
-              f"pass2={story_report['pass2']}")
+        if story_id is not None:
+            print(f"  {story_id_i} Evidence Analyst: {story_report['evidence_analyst']}, "
+                  f"{'zero calls' if story_report['evidence_analyst'] == 'would_reuse' else 'up to 1 new call'}")
+            print(f"  {story_id_i} Pass #2        : {story_report['pass2']}")
+        else:
+            print(f"    - {story_id_i}: evidence_analyst={story_report['evidence_analyst']}, "
+                  f"pass2={story_report['pass2']}")
 
-    if any_would_call_editor_input:
+    if story_id is not None:
+        # The Editor is NEVER run for a targeted partial-story
+        # invocation -- it needs every eligible story's persisted Pass
+        # #2 output, and a targeted run deliberately never processes
+        # any story other than story_id, regardless of whether
+        # story_id's own stages were reused or newly called.
+        report["would_call_editor"] = False
+        report["editor_skipped_reason"] = "targeted_partial_story_run"
+        print(f"  Editor           : skipped because targeted partial-story run")
+        report["max_new_external_llm_requests"] = max_new_external_llm_requests
+        print(f"  maximum NEW external LLM requests for this invocation: {max_new_external_llm_requests}")
+        # For a targeted run, the enforced ceiling (see run_acceptance())
+        # makes the retries-exhausted worst_case bound below inapplicable
+        # -- replace it with the same, actually-enforced figure so these
+        # fields never contradict the dedicated one above.
+        worst_case = max_new_external_llm_requests
+    elif any_would_call_editor_input:
         worst_case += editor.EDITOR_MAX_ATTEMPTS
         report["would_call_editor"] = True
     else:
@@ -721,7 +941,8 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
                     circuit_breaker: "orch.CircuitBreaker" = None,
                     dry_run: bool = False,
                     corpus_analysis_artifact_path: str = None,
-                    evidence_analysis_artifact_path: str = None) -> str:
+                    evidence_analysis_artifact_path: str = None,
+                    story_id: str = None) -> str:
     """Run one full, LIVE Regulus intelligence cycle over the golden
     Acceptance #3 corpus, persist it to a fresh timestamped SQLite file
     under output_dir (or to `db_path`, when given, enabling resume across
@@ -777,6 +998,67 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
     Never writes to bis_watcher.db / regulus_v3.DB_PATH, never sends
     email, never re-runs corpus extraction from the production alerts
     table. Never modifies corpus_analyst.py.
+
+    `story_id` (--story-id) is an explicit, opt-in EXECUTION FILTER,
+    narrowly scoped to selecting which ONE candidate_story is processed
+    downstream of Corpus Analyst Pass #1 -- it changes nothing about
+    intelligence logic, prompts, schemas, persistence semantics,
+    fingerprints, provenance, or the budget/circuit-breaker VALUES the
+    operator configured. Never an implicit fallback -- omitted,
+    behavior is bit-for-bit unchanged.
+
+    FILTERING SEMANTICS: Corpus Analyst Pass #1 output is loaded/reused
+    exactly as it would be without --story-id (bootstrapped or live,
+    unfiltered, and persisted in full). Only the set of candidate_
+    stories handed to the orchestrator for Evidence Analyst/Pass #2
+    processing is narrowed to the single matching story -- via a
+    filtering wrapper around whatever call_corpus_analyst would
+    otherwise be used (the bootstrap substitution above, or the real
+    live caller), applied AFTER that callable returns its (unfiltered)
+    raw result but BEFORE run_intelligence_cycle ever sees the
+    candidate_stories list. No other story's Evidence Analyst or Pass #2
+    is ever invoked; their already-persisted corpus_analyst rows (e.g.
+    from a --corpus-analysis-artifact bootstrap covering the whole
+    corpus) are left untouched.
+
+    FAIL CLOSED: whenever Corpus Analyst output is already known without
+    a call -- a --corpus-analysis-artifact bootstrapped THIS invocation,
+    or corpus_analyst rows already persisted at db_path from a prior
+    invocation of the same run_id -- an unknown story_id raises
+    UnknownStoryIdError immediately, before the Evidence Analyst
+    bootstrap, before --dry-run, before the API-key check, before
+    anything else: zero API calls, nothing additional persisted. (If
+    Corpus Analyst output genuinely is NOT yet known -- a brand-new
+    run_id/db_path with no bootstrap -- this cannot be validated before
+    the Corpus Analyst call itself, which is unavoidable cycle-level
+    overhead independent of story_id; the SAME filtering wrapper still
+    validates it immediately afterward, before any Evidence Analyst/
+    Pass #2/Editor call is even considered.)
+
+    STOPPING BEHAVIOR: the Intelligence Editor is NEVER invoked for a
+    targeted partial-story run, regardless of whether story_id's own
+    Evidence Analyst/Pass #2 stages were reused or newly called --
+    enforced via a dedicated CircuitBreaker instance constructed
+    already-triggered (same consecutive_failure_threshold, never the
+    caller's own `circuit_breaker` object) so that run_intelligence_
+    cycle's EXISTING, unmodified "stopped_reason -> skip Editor" path
+    (regulus_orchestrator.py is never edited) always fires immediately
+    after story_id's own processing, before reconstruct_editor_inputs
+    is ever consulted. Separately, whenever Corpus Analyst output is
+    already known (the bootstrapped case, where its OWN budget
+    consumption is deterministically exactly one unit -- see the
+    corpus-bootstrap note above), this invocation's OWN run-budget
+    ceiling (max_total_llm_calls) is tightened to the EXACT number of
+    stages for story_id that are not yet reusable, plus that one
+    deterministic corpus unit -- never loosened, and the caller's own
+    configured budget (default or explicit) still applies in full
+    alongside it, via min(). This is what makes the dry-run report's
+    "maximum NEW external LLM requests" figure an ENFORCED ceiling on
+    the live run, not merely descriptive output: Pass #2 (if not
+    already persisted) gets exactly one real attempt, never its own
+    internal retry, once this invocation's tightened budget is spent.
+    max_evidence_analyst_calls/max_evidence_attempts_per_story are never
+    altered by this feature.
     """
     budget = budget if budget is not None else orch.RunBudget(
         max_total_llm_calls=DEFAULT_MAX_TOTAL_LLM_CALLS,
@@ -807,6 +1089,17 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
               f"{corpus_analysis_artifact_path!r}, validated, and persisted for run_id={run_id!r} "
               f"at {db_path!r} (corpus_analyst stage) -- no API call made.")
 
+    # --story-id: fail closed NOW (zero API calls) whenever Corpus
+    # Analyst output is already known -- either just bootstrapped above,
+    # or already persisted at db_path from a prior invocation of this
+    # same run_id. If it genuinely is not known yet, this is deferred to
+    # the live-run filtering wrapper below (after the unavoidable Corpus
+    # Analyst call, before any Evidence Analyst/Pass #2/Editor call).
+    if story_id is not None:
+        known_candidate_stories = _known_candidate_stories(run_id, db_path)
+        if known_candidate_stories is not None:
+            _require_known_story_id(known_candidate_stories, story_id)
+
     if evidence_analysis_artifact_path is not None:
         # Validate BEFORE persisting anything and BEFORE any API call --
         # an invalid/incompatible artifact raises here and nothing below runs.
@@ -825,7 +1118,8 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
               f"provenance=legacy_artifact_migration) -- no API call made.")
 
     if dry_run:
-        return _dry_run_report(run_id, db_path=db_path, budget=budget, circuit_breaker=circuit_breaker)
+        return _dry_run_report(run_id, db_path=db_path, budget=budget, circuit_breaker=circuit_breaker,
+                                story_id=story_id)
 
     api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -849,10 +1143,49 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
         def call_corpus_analyst_override(corpus_payload, api_key):  # noqa: ARG001 -- signature match
             return bootstrapped_artifact_raw
 
+    # --story-id targeted execution (live run). See this function's own
+    # docstring for the full filtering/fail-closed/stopping semantics,
+    # and build_targeted_call_corpus_analyst/build_targeted_circuit_
+    # breaker/compute_targeted_budget's own docstrings for exactly what
+    # each piece does. These are also independently tested against
+    # orch.run_intelligence_cycle directly, with injected stage stubs --
+    # see tests/test_regulus_orchestrator.py.
+    effective_budget = budget
+    effective_circuit_breaker = circuit_breaker
+    call_corpus_analyst_final = call_corpus_analyst_override
+    targeted_new_call_cap = None
+    if story_id is not None:
+        underlying_corpus_caller = call_corpus_analyst_override or corpus_analyst.call_anthropic_corpus_analyst
+        call_corpus_analyst_final = build_targeted_call_corpus_analyst(underlying_corpus_caller, story_id)
+
+        # Tighten this invocation's OWN max_total_llm_calls ceiling --
+        # only when Corpus Analyst output is already known (bootstrapped
+        # THIS invocation), the one case its own budget consumption is
+        # deterministically exactly one unit (see the corpus-bootstrap
+        # docstring note).
+        if bootstrapped_artifact_raw is not None:
+            known_candidate_stories = bootstrapped_artifact_raw.get("candidate_stories") or []
+            target_candidate_story = _require_known_story_id(known_candidate_stories, story_id)
+            conn = store.get_connection(db_path)
+            try:
+                reuse_state = _resolve_story_reuse_state(run_id, target_candidate_story, conn=conn)
+            finally:
+                conn.close()
+            targeted_new_call_cap = reuse_state["new_calls_needed"]
+            effective_budget = compute_targeted_budget(budget, targeted_new_call_cap)
+            print(f"[--story-id] selected story_id={story_id!r} only -- maximum NEW external LLM "
+                  f"requests for this invocation: {targeted_new_call_cap} (this invocation's own "
+                  f"max_total_llm_calls ceiling tightened to {effective_budget.max_total_llm_calls}: "
+                  f"{targeted_new_call_cap} plus 1 reserved for the already-bootstrapped Corpus "
+                  f"Analyst stage, per the existing budget-accounting convention -- never looser "
+                  f"than the configured {budget.max_total_llm_calls!r})")
+
+        effective_circuit_breaker = build_targeted_circuit_breaker(circuit_breaker)
+
     outcome = orch.run_intelligence_cycle(
         run_id, corpus, reporting_period, api_key=api_key, db_path=db_path,
-        budget=budget, circuit_breaker=circuit_breaker,
-        call_corpus_analyst=call_corpus_analyst_override,
+        budget=effective_budget, circuit_breaker=effective_circuit_breaker,
+        call_corpus_analyst=call_corpus_analyst_final,
     )
     finished_at = datetime.now(timezone.utc).isoformat()
 
@@ -861,6 +1194,11 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
     diagnostic = _outcome_to_diagnostic_dict(
         run_id, outcome, started_at=started_at, finished_at=finished_at, db_path=db_path,
     )
+    if story_id is not None:
+        diagnostic["targeted_story_id"] = story_id
+        diagnostic["editor_skipped_reason"] = "targeted_partial_story_run"
+        if targeted_new_call_cap is not None:
+            diagnostic["max_new_external_llm_requests"] = targeted_new_call_cap
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(diagnostic, f, indent=2)
 
@@ -923,6 +1261,19 @@ def main():
                               "story-id mismatch, a content/fingerprint mismatch, or a malformed/"
                               "invalid artifact. Never an implicit fallback -- only used when this flag "
                               "is passed explicitly.")
+    parser.add_argument("--story-id", default=None,
+                         help="execution filter: process ONLY this one candidate_story downstream "
+                              "of Corpus Analyst Pass #1 (Evidence Analyst reuse/call, then Pass #2) "
+                              "-- no other story's Evidence Analyst or Pass #2 is ever invoked, and "
+                              "the Intelligence Editor is never run for this targeted partial-story "
+                              "invocation. Changes nothing about intelligence logic, prompts, "
+                              "schemas, persistence semantics, fingerprints, provenance, or the "
+                              "configured budget VALUES -- see run_acceptance()'s docstring for the "
+                              "exact filtering/fail-closed/stopping semantics. Fails closed (before "
+                              "any API call) on a story_id with no matching candidate_story, whenever "
+                              "Corpus Analyst output is already known (e.g. via "
+                              "--corpus-analysis-artifact). Never an implicit fallback -- omitted, "
+                              "behavior is unchanged.")
     args = parser.parse_args()
 
     reporting_period = None
@@ -945,6 +1296,7 @@ def main():
         db_path=args.db_path, budget=budget, circuit_breaker=circuit_breaker, dry_run=args.dry_run,
         corpus_analysis_artifact_path=args.corpus_analysis_artifact,
         evidence_analysis_artifact_path=args.evidence_analysis_artifact,
+        story_id=args.story_id,
     )
 
 

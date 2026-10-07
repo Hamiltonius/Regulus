@@ -36,6 +36,7 @@ def check(name, condition, detail=""):
 import regulus_orchestrator as orch
 import evidence_retrieval as er
 import intelligence_store as store
+import regulus_brief001_acceptance as brief_acc
 from _evidence_test_helpers import load_acceptance_3, get_story, load_corpus_acceptance_3
 
 ACCEPTANCE_3 = load_acceptance_3()          # real 11-candidate-story Corpus Analyst output
@@ -701,6 +702,181 @@ outcome = orch.run_intelligence_cycle(
 check("L5. a success between two isolated same-class failures resets the streak -- "
       "the breaker never trips, and all three stories are still processed",
       circuit_breaker_l2.triggered is False and len(outcome.stories) == 3)
+
+# ===========================================================================
+# T. --story-id targeted execution (regulus_brief001_acceptance.py):
+# build_targeted_call_corpus_analyst / build_targeted_circuit_breaker /
+# compute_targeted_budget, exercised directly against
+# orch.run_intelligence_cycle (frozen, never edited by this feature)
+# with injected, CALL-COUNTING stage stubs -- proving the acceptance
+# layer's --story-id filtering/stopping/budget-capping composes
+# correctly with the real orchestrator wiring, at zero cost (no real
+# Anthropic call anywhere in this file -- same network guard as above).
+# ===========================================================================
+TARGET_STORY_ID = "CS-01"
+
+
+def _counting_evidence_stub():
+    calls = []
+
+    def _stub(candidate_story, retrieval_bundle, corpus, api_key):
+        calls.append(candidate_story["story_id"])
+        return _valid_evidence_output(candidate_story, retrieval_bundle, corpus, api_key)
+    return _stub, calls
+
+
+def _counting_pass2_stub():
+    calls = []
+
+    def _stub(story_id, original_story, evidence_package, api_key):
+        calls.append(story_id)
+        return _valid_pass2_output(story_id, original_story, evidence_package, api_key)
+    return _stub, calls
+
+
+def _counting_editor_stub():
+    calls = []
+
+    def _stub(run_id, reporting_period, editor_inputs, api_key):
+        calls.append(run_id)
+        return _editor_call_stub(run_id, reporting_period, editor_inputs, api_key)
+    return _stub, calls
+
+
+# T1-T7: the EXACT documented scenario -- CS-01's Evidence Analyst
+# artifact is ALREADY reusable (pre-seeded, as a --evidence-analysis-
+# artifact bootstrap would leave it), Corpus Analyst output is already
+# known (the stub simulates a --corpus-analysis-artifact bootstrap
+# returning the full, real 11-story fixture, UNFILTERED), and only
+# CS-01's Pass #2 is not yet persisted -- so targeted_new_call_cap == 1
+# (exactly "maximum NEW external LLM requests for this invocation: 1").
+db_path = _fresh_db_path("t1.db")
+cs01_story = get_story(ACCEPTANCE_3, TARGET_STORY_ID)
+cs01_evidence_raw = _valid_evidence_output(cs01_story, None, None)
+cs01_evidence_fp = store.compute_fingerprint(cs01_story)
+store.save_story_artifact("run-t1", TARGET_STORY_ID, "evidence_analyst", cs01_evidence_raw,
+                           is_valid=True, input_fingerprint=cs01_evidence_fp, db_path=db_path)
+
+reuse_state_t1 = brief_acc._resolve_story_reuse_state(
+    "run-t1", cs01_story, conn=store.get_connection(db_path),
+)
+check("T1. the shared reuse-state helper confirms CS-01 Evidence is already reusable "
+      "and only Pass #2 needs a new call (new_calls_needed == 1)",
+      reuse_state_t1["evidence_analyst"] == "would_reuse"
+      and reuse_state_t1["pass2"] == "would_call"
+      and reuse_state_t1["new_calls_needed"] == 1)
+
+targeted_cap_t1 = reuse_state_t1["new_calls_needed"]
+targeted_budget_t1 = brief_acc.compute_targeted_budget(orch.RunBudget(max_total_llm_calls=4), targeted_cap_t1)
+check("T2. compute_targeted_budget tightens max_total_llm_calls to exactly 2 "
+      "(1 new external call + 1 reserved for the corpus-bootstrap unit), never looser "
+      "than the configured ceiling of 4",
+      targeted_budget_t1.max_total_llm_calls == 2)
+
+targeted_corpus_caller_t1 = brief_acc.build_targeted_call_corpus_analyst(
+    _corpus_analyst_stub_all(), TARGET_STORY_ID,
+)
+targeted_cb_t1 = brief_acc.build_targeted_circuit_breaker(orch.CircuitBreaker(consecutive_failure_threshold=2))
+evidence_stub_t1, evidence_calls_t1 = _counting_evidence_stub()
+pass2_stub_t1, pass2_calls_t1 = _counting_pass2_stub()
+editor_stub_t1, editor_calls_t1 = _counting_editor_stub()
+
+outcome_t1 = orch.run_intelligence_cycle(
+    "run-t1", DEV_CORPUS, REPORTING_PERIOD, api_key="fake-key-not-real", db_path=db_path,
+    call_corpus_analyst=targeted_corpus_caller_t1,
+    call_evidence_analyst=evidence_stub_t1, retrieve=_fake_retrieve,
+    call_pass2=pass2_stub_t1, call_editor=editor_stub_t1,
+    budget=targeted_budget_t1, circuit_breaker=targeted_cb_t1,
+)
+check("T3. --story-id targeting processes ONLY the selected story (CS-01), "
+      "even though the Corpus Analyst stub returned the full 11-story fixture",
+      [s.story_id for s in outcome_t1.stories] == [TARGET_STORY_ID])
+check("T4. CS-02..CS-11's Evidence Analyst caller is never invoked at all -- the "
+      "Evidence Analyst caller is invoked zero times total (CS-01's own artifact was reused)",
+      evidence_calls_t1 == [])
+check("T5. CS-01's Pass #2 caller IS invoked exactly once -- the only new call this "
+      "invocation makes -- and no other story's Pass #2 caller is ever invoked",
+      pass2_calls_t1 == [TARGET_STORY_ID])
+check("T6. the Intelligence Editor is NEVER invoked in targeted mode, even though "
+      "CS-01's Pass #2 succeeded and is eligible for it",
+      editor_calls_t1 == [])
+check("T7. outcome.brief_outcome is None (Editor never ran) because the stopping "
+      "mechanism fired", outcome_t1.brief_outcome is None and outcome_t1.brief_skipped_reason is not None)
+
+pass2_record_t1 = store.load_story_artifact("run-t1", TARGET_STORY_ID, "pass2", db_path=db_path)
+check("T8. CS-01's successful Pass #2 result is persisted as valid, exactly as a normal "
+      "(non-targeted) run would persist it",
+      pass2_record_t1 is not None and pass2_record_t1.is_valid
+      and pass2_record_t1.input_fingerprint is not None)
+check("T9. that persisted Pass #2 result is reusable under its own recorded "
+      "input_fingerprint -- so a LATER invocation (targeted or not) can reuse it with "
+      "zero further cost",
+      store.find_reusable_story_artifact(
+          "run-t1", TARGET_STORY_ID, "pass2", pass2_record_t1.input_fingerprint, db_path=db_path,
+      ) is not None)
+
+# T10: build_targeted_call_corpus_analyst's own filtering logic fails
+# closed -- called directly (the same (corpus_payload, api_key) call
+# shape every call_corpus_analyst caller has), an unknown story_id
+# raises UnknownStoryIdError immediately, with the underlying caller's
+# result already in hand and zero further stage calls made.
+targeted_corpus_caller_t10 = brief_acc.build_targeted_call_corpus_analyst(
+    _corpus_analyst_stub_all(), "CS-99-DOES-NOT-EXIST",
+)
+raised_t10 = None
+try:
+    targeted_corpus_caller_t10({"some": "corpus_payload"}, "fake-key-not-real")
+except brief_acc.UnknownStoryIdError as e:
+    raised_t10 = e
+check("T10. an unknown --story-id raises UnknownStoryIdError, fails closed, directly "
+      "from the targeted call_corpus_analyst wrapper", raised_t10 is not None)
+
+# T11-T12: that SAME unknown story_id, run through the real
+# run_intelligence_cycle (frozen, never edited), still makes zero
+# Evidence Analyst/Pass #2/Editor calls -- corpus_analyst.py (also
+# frozen) catches ANY exception its caller raises, including
+# UnknownStoryIdError, as a failed Corpus Analyst attempt (retried up to
+# CORPUS_ANALYST_MAX_ATTEMPTS, then reported as corpus_analysis_is_valid
+# =False) rather than letting it propagate -- so the OBSERVABLE
+# signal one level up is an invalid corpus analysis, not a raised
+# UnknownStoryIdError, but the fail-closed GUARANTEE (no per-story stage
+# is ever reached for an unresolvable story_id) still holds exactly the
+# same, since run_intelligence_cycle returns immediately whenever
+# corpus_outcome.is_valid is False.
+db_path = _fresh_db_path("t10.db")
+evidence_stub_t10, evidence_calls_t10 = _counting_evidence_stub()
+pass2_stub_t10, pass2_calls_t10 = _counting_pass2_stub()
+editor_stub_t10, editor_calls_t10 = _counting_editor_stub()
+outcome_t10 = orch.run_intelligence_cycle(
+    "run-t10", DEV_CORPUS, REPORTING_PERIOD, api_key="fake-key-not-real", db_path=db_path,
+    call_corpus_analyst=targeted_corpus_caller_t10,
+    call_evidence_analyst=evidence_stub_t10, retrieve=_fake_retrieve,
+    call_pass2=pass2_stub_t10, call_editor=editor_stub_t10,
+)
+check("T11. the unresolvable story_id surfaces as an invalid Corpus Analysis "
+      "(corpus_analyst.py's own frozen retry/exception handling, never bypassed/"
+      "special-cased by this feature) -- not a crash, not silent full-corpus processing",
+      outcome_t10.corpus_analysis_is_valid is False)
+check("T12. no Evidence Analyst, Pass #2, or Editor caller was EVER invoked for the "
+      "unknown-story-id case, for either story_id or any other -- the failure happens "
+      "before any per-story stage is even considered",
+      evidence_calls_t10 == [] and pass2_calls_t10 == [] and editor_calls_t10 == [])
+
+# T13: a REAL (unmodified) acceptance-layer run_acceptance() call, using
+# regulus_brief001_acceptance.py's own dry-run path, against a fresh
+# run_id/db_path with --story-id but NO corpus bootstrap yet (Corpus
+# Analyst output genuinely unknown) -- confirms the early, zero-cost
+# fail-closed check is simply deferred (not skipped/bypassed) rather
+# than silently processing every story, by checking the returned report
+# never resolves a selected story under that condition.
+out_dir_t13 = tempfile.mkdtemp(prefix="regulus_brief_acceptance_targeted_test_", dir=_TMPDIR)
+report_t13 = brief_acc.run_acceptance(
+    "dryrun-t13", output_dir=out_dir_t13, dry_run=True, story_id=TARGET_STORY_ID,
+)
+check("T13. --story-id on a dry run with no known Corpus Analyst output yet does NOT "
+      "raise and does NOT silently resolve/select the story -- it is reported as unresolved",
+      report_t13["corpus_analyst"]["resolved"] is False
+      and report_t13.get("selected_story_ids") == [TARGET_STORY_ID])
 
 # ===========================================================================
 # I. Isolation / no real network call anywhere in this file
