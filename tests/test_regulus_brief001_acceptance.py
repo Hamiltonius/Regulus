@@ -161,6 +161,146 @@ finally:
         os.environ["ANTHROPIC_API_KEY"] = _had_key
 
 # ===========================================================================
+# F. --corpus-analysis-artifact bootstrap: validate + persist an already-
+# accepted Corpus Analyst Pass #1 output, with ZERO API calls, so a
+# dry-run (and later a live run) never rediscovers a frozen result.
+# ===========================================================================
+ACC3_CORPUS_ANALYST_FIXTURE = os.path.join(acc.FIXTURES_DIR, "corpus_analyst_acceptance_3.json")
+with open(ACC3_CORPUS_ANALYST_FIXTURE, "r", encoding="utf-8") as f:
+    ACC3_CORPUS_ANALYST_RAW = json.load(f)
+ACC3_STORY_IDS = [s["story_id"] for s in ACC3_CORPUS_ANALYST_RAW["candidate_stories"]]
+
+# F1-F3: the real frozen fixture, loaded fresh, validates and bootstraps
+# cleanly, and the dry-run report reflects it -- using the EXACT command
+# the user asked for: --corpus-analysis-artifact tests/fixtures/
+# corpus_analyst_acceptance_3.json against run_id=brief001-acceptance-2.
+out_dir = _fresh_dir("f")
+report = acc.run_acceptance(
+    "brief001-acceptance-2", output_dir=out_dir, dry_run=True,
+    corpus_analysis_artifact_path=ACC3_CORPUS_ANALYST_FIXTURE,
+)
+check("F1. bootstrapping the real frozen Acceptance #3 Corpus Analyst artifact succeeds "
+      "and the dry-run report resolves corpus_analyst from it (no 'unknown without a live call')",
+      report["corpus_analyst"]["resolved"] is True
+      and report["corpus_analyst"]["candidate_story_count"] == len(ACC3_STORY_IDS))
+check("F2. every bootstrapped story appears in the dry-run report, each needing a live call "
+      "for Evidence Analyst (nothing was persisted for Evidence/Pass #2 yet)",
+      {s["story_id"] for s in report["stories"]} == set(ACC3_STORY_IDS)
+      and all(s["evidence_analyst"] == "would_call" for s in report["stories"]))
+check("F3. the max calls actually initiable is capped at the configured budget "
+      "(max_total_llm_calls), not the much larger uncapped worst case",
+      report["max_possible_calls_actual"] == report["budget"]["max_total_llm_calls"]
+      and report["max_possible_calls_worst_case"] > report["max_possible_calls_actual"])
+
+# F4: the artifact is actually persisted into the store (not just read into
+# memory for the report) -- a second, independent dry-run against the SAME
+# db_path/run_id (without re-passing --corpus-analysis-artifact) still sees
+# the bootstrapped candidate stories.
+db_path_f = report["db_path"]
+report_again = acc.run_acceptance("brief001-acceptance-2", output_dir=out_dir, db_path=db_path_f, dry_run=True)
+check("F4. the bootstrapped corpus_analyst state persists across a SEPARATE dry-run "
+      "invocation against the same db_path/run_id, with no artifact flag needed the second time",
+      report_again["corpus_analyst"]["resolved"] is True
+      and report_again["corpus_analyst"]["candidate_story_count"] == len(ACC3_STORY_IDS))
+
+# F5: each persisted corpus_analyst row carries a fingerprint (required for
+# safe resume semantics) -- verified directly against the store.
+conn_f = store.get_connection(db_path_f)
+persisted_f = store.list_story_artifacts("brief001-acceptance-2", stage="corpus_analyst", conn=conn_f)
+conn_f.close()
+check("F5. every persisted corpus_analyst artifact carries a non-None input_fingerprint",
+      len(persisted_f) == len(ACC3_STORY_IDS) and all(r.input_fingerprint is not None for r in persisted_f))
+
+# F6: omitting --corpus-analysis-artifact is a complete no-op with respect
+# to this capability -- never an implicit fallback.
+out_dir = _fresh_dir("f6")
+report = acc.run_acceptance("dryrun-f6", output_dir=out_dir, dry_run=True)
+check("F6. omitting --corpus-analysis-artifact entirely leaves corpus_analyst unresolved, "
+      "exactly as before this capability existed -- it is never an implicit fallback",
+      report["corpus_analyst"]["resolved"] is False)
+
+# F7: a nonexistent artifact path fails closed with a clear, typed error --
+# before any persistence and before any API call -- rather than silently
+# falling through to a live call or crashing with an unrelated exception.
+out_dir = _fresh_dir("f7")
+raised = None
+try:
+    acc.run_acceptance("dryrun-f7", output_dir=out_dir, dry_run=True,
+                        corpus_analysis_artifact_path="/tmp/this_file_does_not_exist_regulus.json")
+except acc.CorpusAnalysisArtifactInvalidError as e:
+    raised = e
+check("F7. a nonexistent --corpus-analysis-artifact path raises CorpusAnalysisArtifactInvalidError, "
+      "fails closed before any persistence or API call", raised is not None)
+check("F7b. nothing is written to disk for the nonexistent-artifact case",
+      not os.listdir(out_dir))
+
+# F8: an artifact that references a document number NOT present in the
+# current corpus (i.e. produced against a different corpus -- the
+# "mismatched artifact" case) fails closed via schema validation, never
+# silently accepted.
+out_dir = _fresh_dir("f8")
+mismatched_raw = {
+    "reporting_period": {"start": "2026-09-14", "end": "2026-10-05"},
+    "corpus_assessment": "synthetic",
+    "candidate_stories": [{
+        "story_id": "CS-MISMATCHED",
+        "headline": "synthetic",
+        "preliminary_hypothesis": "synthetic",
+        "supporting_document_numbers": ["2099-99999999"],  # not in the real corpus fixture
+        "research_questions": ["synthetic question"],
+        "alternative_hypotheses": [],
+    }],
+    "potential_administrative_activity": [],
+    "unclustered_observations_of_interest": [],
+    "corpus_level_gaps": [],
+}
+mismatched_path = os.path.join(out_dir, "mismatched_corpus_analyst.json")
+with open(mismatched_path, "w", encoding="utf-8") as f:
+    json.dump(mismatched_raw, f)
+
+raised = None
+try:
+    acc.run_acceptance("dryrun-f8", output_dir=out_dir, dry_run=True,
+                        corpus_analysis_artifact_path=mismatched_path)
+except acc.CorpusAnalysisArtifactInvalidError as e:
+    raised = e
+check("F8. an artifact referencing a document number outside the current corpus "
+      "(a mismatched artifact) raises CorpusAnalysisArtifactInvalidError, fails closed",
+      raised is not None)
+# Nothing should have been persisted for this run_id as a result of the failed bootstrap.
+db_candidates_f8 = [p for p in os.listdir(out_dir) if p.endswith(".db")]
+check("F8b. no db file is created/populated for the mismatched-artifact case "
+      "(validation happens before any persistence)",
+      db_candidates_f8 == [])
+
+# F9: a syntactically-invalid (not valid JSON) artifact file also fails
+# closed with the same typed error, not a raw JSONDecodeError leaking out.
+out_dir = _fresh_dir("f9")
+bad_json_path = os.path.join(out_dir, "not_json.json")
+with open(bad_json_path, "w", encoding="utf-8") as f:
+    f.write("{not valid json")
+raised = None
+try:
+    acc.run_acceptance("dryrun-f9", output_dir=out_dir, dry_run=True,
+                        corpus_analysis_artifact_path=bad_json_path)
+except acc.CorpusAnalysisArtifactInvalidError as e:
+    raised = e
+check("F9. an unparseable (non-JSON) artifact file raises CorpusAnalysisArtifactInvalidError "
+      "(not a raw json.JSONDecodeError)", raised is not None)
+
+# F10: load_and_validate_corpus_analysis_artifact() uses the SAME schema
+# contract corpus_analyst.run_corpus_analysis() itself uses -- proven by
+# calling corpus_analyst_schema.validate_corpus_analysis() directly over
+# the same fixture and the same document-number set, and getting the same
+# verdict as the function under test.
+corpus_f10, _ = acc.load_golden_corpus()
+valid_doc_numbers_f10 = {o.document_number for o in corpus_f10.observations if o.document_number is not None}
+direct_result = acc.corpus_analyst_schema.validate_corpus_analysis(ACC3_CORPUS_ANALYST_RAW, valid_doc_numbers_f10)
+check("F10. the bootstrap validator agrees with a direct call to corpus_analyst_schema."
+      "validate_corpus_analysis() over the same artifact/corpus -- no separate, looser check",
+      direct_result.is_valid is True)
+
+# ===========================================================================
 # E. Isolation / no real network call anywhere in this file
 # ===========================================================================
 check("E1. no real network POST was attempted anywhere in this test file",

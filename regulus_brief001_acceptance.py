@@ -32,7 +32,12 @@ WHAT THIS SCRIPT DOES NOT DO (scope control):
   - does NOT merge or deploy anything;
   - does NOT hardcode any story's expected conclusion -- every stage uses
     its REAL default live caller (no stub), exactly as a casual
-    orchestrator run would.
+    orchestrator run would, UNLESS --corpus-analysis-artifact is passed
+    explicitly, in which case (and ONLY in that case) the Corpus Analyst
+    stage substitutes a previously-validated, already-accepted artifact
+    instead of a live call -- see load_and_validate_corpus_analysis_
+    artifact() / bootstrap_corpus_analysis_artifact() below. This is
+    never an implicit fallback.
 
 WHAT IT DOES:
   1. Load the real, unmodified Acceptance #3 corpus (87 observations) from
@@ -64,6 +69,7 @@ from datetime import datetime, timezone
 
 from corpus_extractor import Corpus, CorpusObservation
 import corpus_analyst
+import corpus_analyst_schema
 import evidence_analyst
 import intelligence_analyst_pass2 as pass2
 import intelligence_editor as editor
@@ -101,6 +107,14 @@ DEFAULT_MAX_EVIDENCE_ATTEMPTS_PER_STORY = 1
 DEFAULT_CIRCUIT_BREAKER_THRESHOLD = 2
 
 
+class CorpusAnalysisArtifactInvalidError(ValueError):
+    """Raised by load_and_validate_corpus_analysis_artifact() when a
+    --corpus-analysis-artifact fails validation, cannot be parsed, or
+    does not exist. Always raised BEFORE bootstrap_corpus_analysis_
+    artifact() persists anything and BEFORE any API call -- fail closed,
+    never a silent partial acceptance of a bad artifact."""
+
+
 def load_golden_corpus(path: str = CORPUS_FIXTURE_PATH) -> Corpus:
     """Load and reconstruct the REAL corpus_extractor.Corpus used for
     Acceptance #3 from tests/fixtures/corpus_acceptance_3.json. No
@@ -125,6 +139,87 @@ def load_golden_corpus(path: str = CORPUS_FIXTURE_PATH) -> Corpus:
         start_date=raw["reporting_period"]["start"], end_date=raw["reporting_period"]["end"],
         observations=observations,
     ), raw["reporting_period"]
+
+
+def load_and_validate_corpus_analysis_artifact(path: str, corpus: Corpus) -> dict:
+    """Load a previously-produced, already-accepted Corpus Analyst Pass #1
+    output from `path` (--corpus-analysis-artifact) and validate it using
+    the EXACT SAME deterministic contract corpus_analyst.run_corpus_
+    analysis() itself uses -- corpus_analyst_schema.validate_corpus_
+    analysis() -- computed over the ACTUAL document numbers present in
+    `corpus`, never a looser or different check. This function imports
+    corpus_analyst_schema only (the schema module corpus_analyst.py
+    itself already depends on); it never imports or modifies corpus_
+    analyst.py's own call/retry logic, and makes no API call.
+
+    Raises CorpusAnalysisArtifactInvalidError -- fail closed, before any
+    further processing -- if the file does not exist, is not valid JSON,
+    or fails schema validation (including a document-number reference
+    outside the current corpus, which is exactly how a MISMATCHED
+    artifact -- one produced against a different corpus -- is caught).
+    """
+    if not os.path.isfile(path):
+        raise CorpusAnalysisArtifactInvalidError(
+            f"--corpus-analysis-artifact path does not exist or is not a file: {path!r}"
+        )
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        raise CorpusAnalysisArtifactInvalidError(
+            f"--corpus-analysis-artifact at {path!r} could not be read/parsed as JSON: {e}"
+        ) from e
+
+    valid_document_numbers = {
+        o.document_number for o in corpus.observations if o.document_number is not None
+    }
+    result = corpus_analyst_schema.validate_corpus_analysis(raw, valid_document_numbers)
+    if not result.is_valid:
+        raise CorpusAnalysisArtifactInvalidError(
+            f"--corpus-analysis-artifact at {path!r} failed Corpus Analyst schema validation "
+            f"against the current corpus fixture's document numbers "
+            f"(a mismatched artifact -- e.g. produced against a different corpus -- fails here "
+            f"via an out-of-set document-number reference): {result.validation_errors}"
+        )
+    return raw
+
+
+def bootstrap_corpus_analysis_artifact(run_id: str, raw: dict, *, db_path: str) -> list:
+    """Persist an externally-validated Corpus Analyst Pass #1 output
+    (already passed through load_and_validate_corpus_analysis_artifact())
+    into the intelligence store for `run_id`, exactly as a normal live
+    run would persist it: one store.save_story_artifact(..., stage=
+    "corpus_analyst", input_fingerprint=...) call per candidate_story,
+    with its deterministic content fingerprint attached so later Evidence/
+    Pass #2 reuse lookups (and this script's own --dry-run reporting) see
+    exactly the same state a live Corpus Analyst call would have produced.
+
+    Never called implicitly -- only when the operator passes
+    --corpus-analysis-artifact explicitly (see run_acceptance()). Does
+    not modify corpus_analyst.py. Makes no API call. Returns the list of
+    candidate_story dicts persisted.
+
+    Known limitation (documented, not engineered around, per the
+    smallest-safe-change scope of this bootstrap capability): if `run_id`
+    already has PERSISTED corpus_analyst rows for story_ids that are NOT
+    present in `raw` (e.g. a prior artifact/live run covered more
+    stories), those stale rows are left untouched rather than reconciled
+    or deleted -- this bootstrap is intended for a fresh run_id/db_path,
+    not for replacing a partially-complete run with a narrower artifact.
+    """
+    candidate_stories = raw.get("candidate_stories") or []
+    conn = store.get_connection(db_path)
+    try:
+        for candidate_story in candidate_stories:
+            story_id = candidate_story.get("story_id", "UNKNOWN")
+            fingerprint = store.compute_fingerprint(candidate_story)
+            store.save_story_artifact(
+                run_id, story_id, "corpus_analyst", candidate_story,
+                is_valid=True, input_fingerprint=fingerprint, conn=conn,
+            )
+    finally:
+        conn.close()
+    return candidate_stories
 
 
 def _outcome_to_diagnostic_dict(run_id: str, outcome: orch.OrchestrationOutcome, *,
@@ -268,10 +363,15 @@ def _dry_run_report(run_id: str, *, db_path: str, budget: orch.RunBudget,
         }
         # Worst case with zero prior state: Corpus Analyst's own attempts,
         # plus nothing else is computable yet (candidate_stories unknown).
-        report["max_possible_calls_worst_case"] = corpus_analyst.CORPUS_ANALYST_MAX_ATTEMPTS
-        print(f"  max possible calls (worst case, corpus unresolved): "
-              f"{report['max_possible_calls_worst_case']} (Corpus Analyst attempts only -- "
-              f"nothing further is knowable before that call)")
+        worst_case = corpus_analyst.CORPUS_ANALYST_MAX_ATTEMPTS
+        report["max_possible_calls_worst_case"] = worst_case
+        report["max_possible_calls_actual"] = (
+            min(worst_case, budget.max_total_llm_calls) if budget.max_total_llm_calls is not None else worst_case
+        )
+        print(f"  max possible calls (worst case, corpus unresolved): {worst_case} "
+              f"(Corpus Analyst attempts only -- nothing further is knowable before that call)")
+        print(f"  max calls actually initiable under the configured budget: "
+              f"{report['max_possible_calls_actual']}")
         if conn is not None:
             conn.close()
         return report
@@ -325,9 +425,14 @@ def _dry_run_report(run_id: str, *, db_path: str, budget: orch.RunBudget,
         report["would_call_editor"] = False
 
     report["max_possible_calls_worst_case"] = worst_case
+    report["max_possible_calls_actual"] = (
+        min(worst_case, budget.max_total_llm_calls) if budget.max_total_llm_calls is not None else worst_case
+    )
     print(f"  max possible calls (worst case, all own-retries exhausted): {worst_case}")
     if budget.max_total_llm_calls is not None:
         print(f"  budget ceiling (max_total_llm_calls)                      : {budget.max_total_llm_calls}")
+    print(f"  max calls actually initiable under the configured budget   : "
+          f"{report['max_possible_calls_actual']}")
 
     if conn is not None:
         conn.close()
@@ -341,7 +446,8 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
                     db_path: str = None,
                     budget: "orch.RunBudget" = None,
                     circuit_breaker: "orch.CircuitBreaker" = None,
-                    dry_run: bool = False) -> str:
+                    dry_run: bool = False,
+                    corpus_analysis_artifact_path: str = None) -> str:
     """Run one full, LIVE Regulus intelligence cycle over the golden
     Acceptance #3 corpus, persist it to a fresh timestamped SQLite file
     under output_dir (or to `db_path`, when given, enabling resume across
@@ -358,11 +464,32 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
     dry-run report from _dry_run_report() and does not call
     run_intelligence_cycle at all.
 
+    `corpus_analysis_artifact_path` (--corpus-analysis-artifact) is the
+    explicit, opt-in bootstrap: when supplied, the file is loaded and
+    validated via load_and_validate_corpus_analysis_artifact() (fail
+    closed, before anything else happens) and persisted via bootstrap_
+    corpus_analysis_artifact() -- BEFORE the dry-run branch, so a dry run
+    with this flag reports the bootstrapped candidate stories' reuse
+    eligibility rather than "unresolved". On a LIVE run, the validated
+    artifact is also substituted in place of a real Corpus Analyst call
+    (via call_corpus_analyst), so Corpus Analyst Pass #1 is never
+    re-invoked for this run_id -- exactly the "do not spend API calls
+    rediscovering an already-accepted result" requirement this flag
+    exists for. This is NEVER an implicit fallback: with the flag
+    omitted, behavior is bit-for-bit what it was before this capability
+    existed. NOTE: the orchestrator's budget wrapper still counts this
+    substituted callable as ONE corpus_analyst-stage call against
+    max_total_llm_calls on a live run (it has no way to distinguish a
+    real network call from a bootstrap substitution without changing the
+    shared budget-wrapping mechanism used by every other caller/test) --
+    it makes zero actual requests, but conservatively still consumes one
+    unit of the configured budget headroom.
+
     Makes MULTIPLE real Anthropic API calls when NOT in dry-run mode (see
     module docstring) -- this is the live acceptance path, not a test.
     Never writes to bis_watcher.db / regulus_v3.DB_PATH, never sends
     email, never re-runs corpus extraction from the production alerts
-    table.
+    table. Never modifies corpus_analyst.py.
     """
     budget = budget if budget is not None else orch.RunBudget(
         max_total_llm_calls=DEFAULT_MAX_TOTAL_LLM_CALLS,
@@ -378,6 +505,21 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         db_path = os.path.join(output_dir, f"regulus_intelligence_acceptance_{run_id}_{timestamp}.db")
 
+    corpus, fixture_reporting_period = load_golden_corpus()
+    reporting_period = reporting_period or fixture_reporting_period
+
+    bootstrapped_artifact_raw = None
+    if corpus_analysis_artifact_path is not None:
+        # Validate BEFORE persisting anything and BEFORE any API call --
+        # an invalid/mismatched artifact raises here and nothing below runs.
+        bootstrapped_artifact_raw = load_and_validate_corpus_analysis_artifact(
+            corpus_analysis_artifact_path, corpus,
+        )
+        persisted = bootstrap_corpus_analysis_artifact(run_id, bootstrapped_artifact_raw, db_path=db_path)
+        print(f"Bootstrapped Corpus Analyst Pass #1: {len(persisted)} candidate stories loaded from "
+              f"{corpus_analysis_artifact_path!r}, validated, and persisted for run_id={run_id!r} "
+              f"at {db_path!r} (corpus_analyst stage) -- no API call made.")
+
     if dry_run:
         return _dry_run_report(run_id, db_path=db_path, budget=budget, circuit_breaker=circuit_breaker)
 
@@ -389,17 +531,24 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
             "BEFORE any network call -- nothing is contacted if this raises."
         )
 
-    corpus, fixture_reporting_period = load_golden_corpus()
-    reporting_period = reporting_period or fixture_reporting_period
-
     _print_budget_plan(budget, circuit_breaker, db_path=db_path)
 
     started_at = datetime.now(timezone.utc).isoformat()
     # Every call_* parameter is left at its default (None) -- each stage
-    # uses its OWN real live caller. No stub, no hardcoded expectation.
+    # uses its OWN real live caller -- UNLESS a bootstrap artifact was
+    # supplied, in which case call_corpus_analyst is substituted with a
+    # callable that returns the already-validated artifact verbatim,
+    # making no request. No stub for any other stage; no hardcoded
+    # expectation anywhere.
+    call_corpus_analyst_override = None
+    if bootstrapped_artifact_raw is not None:
+        def call_corpus_analyst_override(corpus_payload, api_key):  # noqa: ARG001 -- signature match
+            return bootstrapped_artifact_raw
+
     outcome = orch.run_intelligence_cycle(
         run_id, corpus, reporting_period, api_key=api_key, db_path=db_path,
         budget=budget, circuit_breaker=circuit_breaker,
+        call_corpus_analyst=call_corpus_analyst_override,
     )
     finished_at = datetime.now(timezone.utc).isoformat()
 
@@ -451,6 +600,14 @@ def main():
                          help="report what a real run would call or reuse, and the maximum possible "
                               "call volume under the configured budget -- makes ZERO API requests and "
                               "does not execute the cycle")
+    parser.add_argument("--corpus-analysis-artifact", default=None,
+                         help="path to a previously-validated Corpus Analyst Pass #1 output (e.g. "
+                              "tests/fixtures/corpus_analyst_acceptance_3.json) to bootstrap into the "
+                              "intelligence store for --run-id instead of making a live Corpus Analyst "
+                              "call. Validated against the current corpus fixture's document numbers "
+                              "before being accepted (fails closed, before any API call, on an invalid "
+                              "or mismatched artifact). Never an implicit fallback -- only used when "
+                              "this flag is passed explicitly.")
     args = parser.parse_args()
 
     reporting_period = None
@@ -471,6 +628,7 @@ def main():
     run_acceptance(
         args.run_id, reporting_period=reporting_period, output_dir=args.output_dir,
         db_path=args.db_path, budget=budget, circuit_breaker=circuit_breaker, dry_run=args.dry_run,
+        corpus_analysis_artifact_path=args.corpus_analysis_artifact,
     )
 
 
