@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS story_artifacts (
     validation_errors_json TEXT NOT NULL,
     failure_reason      TEXT,
     input_fingerprint   TEXT,
+    provenance_json     TEXT,
     saved_at            TEXT NOT NULL,
     PRIMARY KEY (run_id, story_id, stage)
 );
@@ -114,6 +115,34 @@ def _ensure_input_fingerprint_column(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+def _ensure_provenance_column(conn: sqlite3.Connection) -> None:
+    """Additive schema migration, mirroring _ensure_input_fingerprint_
+    column() exactly: a story_artifacts table created before this column
+    existed won't have it yet. A no-op on a fresh or already-migrated
+    database. Never touches any other column or any row data.
+
+    provenance_json is optional, store-level-only metadata about HOW an
+    artifact came to be persisted -- e.g. {"kind": "legacy_artifact_
+    migration", ...} for one bootstrapped from a pre-fingerprinting
+    artifact file via regulus_brief001_acceptance.py's --evidence-
+    analysis-artifact (see that module's bootstrap_evidence_analysis_
+    artifact() docstring). It is NEVER read by find_reusable_story_
+    artifact() or any other reuse-eligibility decision -- reuse remains
+    governed exclusively by is_valid + exact input_fingerprint equality,
+    unchanged. This column exists purely so a legacy-migrated artifact's
+    provenance is explicit and auditable after the fact, without being
+    folded into payload_json (the substantive analytical content) or
+    conflated with validation_errors_json/failure_reason (which mean
+    something materially different: an actual validation problem, not a
+    note about how compatibility was established). A normal, freshly-
+    generated artifact (e.g. from a live orchestrator run) is saved with
+    provenance=None, same as every artifact before this column existed."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(story_artifacts)").fetchall()}
+    if "provenance_json" not in cols:
+        conn.execute("ALTER TABLE story_artifacts ADD COLUMN provenance_json TEXT")
+        conn.commit()
+
+
 def get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
     """Open (and, if needed, initialize) the intelligence store at
     db_path, defaulting to INTELLIGENCE_DB_PATH -- NEVER regulus_v3.DB_PATH
@@ -124,6 +153,7 @@ def get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
     conn.executescript(_SCHEMA_SQL)
     conn.commit()
     _ensure_input_fingerprint_column(conn)
+    _ensure_provenance_column(conn)
     return conn
 
 
@@ -154,6 +184,7 @@ class StoryArtifactRecord:
     validation_errors: list = field(default_factory=list)
     failure_reason: Optional[str] = None
     input_fingerprint: Optional[str] = None
+    provenance: Optional[dict] = None
     saved_at: Optional[str] = None
 
 
@@ -173,6 +204,7 @@ def save_story_artifact(run_id: str, story_id: str, stage: str, payload: Any, *,
                          is_valid: bool, validation_errors: Optional[list] = None,
                          failure_reason: Optional[str] = None,
                          input_fingerprint: Optional[str] = None,
+                         provenance: Optional[dict] = None,
                          db_path: Optional[str] = None,
                          conn: Optional[sqlite3.Connection] = None) -> None:
     """Persist (overwrite) one story's artifact for one pipeline stage.
@@ -185,6 +217,15 @@ def save_story_artifact(run_id: str, story_id: str, stage: str, payload: Any, *,
     artifact() later checks before treating this artifact as reusable --
     omit it (leave None) for an artifact that should never be considered
     for reuse (e.g. a failure record with nothing valid in it).
+
+    provenance, when supplied, is an optional store-level-only metadata
+    dict about HOW this artifact came to be persisted (e.g. imported from
+    a pre-fingerprinting artifact file rather than produced by this run)
+    -- see _ensure_provenance_column()'s docstring. It is never consulted
+    by find_reusable_story_artifact() or any reuse decision, and it is
+    kept entirely separate from `payload` (never merged into it): a
+    normal, freshly-generated artifact from a live run omits it (None),
+    exactly as before this parameter existed.
     """
     if stage not in STAGE_VALUES:
         raise ValueError(f"stage must be one of {sorted(STAGE_VALUES)}, got {stage!r}")
@@ -195,10 +236,12 @@ def save_story_artifact(run_id: str, story_id: str, stage: str, payload: Any, *,
         conn.execute(
             "INSERT OR REPLACE INTO story_artifacts "
             "(run_id, story_id, stage, payload_json, is_valid, validation_errors_json, "
-            "failure_reason, input_fingerprint, saved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "failure_reason, input_fingerprint, provenance_json, saved_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 run_id, story_id, stage, json.dumps(payload), 1 if is_valid else 0,
-                json.dumps(validation_errors or []), failure_reason, input_fingerprint, _now_iso(),
+                json.dumps(validation_errors or []), failure_reason, input_fingerprint,
+                (json.dumps(provenance) if provenance is not None else None), _now_iso(),
             ),
         )
         conn.commit()
@@ -215,7 +258,7 @@ def load_story_artifact(run_id: str, story_id: str, stage: str, *,
     try:
         row = conn.execute(
             "SELECT run_id, story_id, stage, payload_json, is_valid, validation_errors_json, "
-            "failure_reason, input_fingerprint, saved_at FROM story_artifacts "
+            "failure_reason, input_fingerprint, provenance_json, saved_at FROM story_artifacts "
             "WHERE run_id = ? AND story_id = ? AND stage = ?",
             (run_id, story_id, stage),
         ).fetchone()
@@ -227,7 +270,8 @@ def load_story_artifact(run_id: str, story_id: str, stage: str, *,
     return StoryArtifactRecord(
         run_id=row[0], story_id=row[1], stage=row[2], payload=json.loads(row[3]),
         is_valid=bool(row[4]), validation_errors=json.loads(row[5]),
-        failure_reason=row[6], input_fingerprint=row[7], saved_at=row[8],
+        failure_reason=row[6], input_fingerprint=row[7],
+        provenance=(json.loads(row[8]) if row[8] is not None else None), saved_at=row[9],
     )
 
 
@@ -264,14 +308,14 @@ def list_story_artifacts(run_id: str, *, stage: Optional[str] = None,
         if stage is not None:
             rows = conn.execute(
                 "SELECT run_id, story_id, stage, payload_json, is_valid, validation_errors_json, "
-                "failure_reason, input_fingerprint, saved_at FROM story_artifacts "
+                "failure_reason, input_fingerprint, provenance_json, saved_at FROM story_artifacts "
                 "WHERE run_id = ? AND stage = ? ORDER BY story_id",
                 (run_id, stage),
             ).fetchall()
         else:
             rows = conn.execute(
                 "SELECT run_id, story_id, stage, payload_json, is_valid, validation_errors_json, "
-                "failure_reason, input_fingerprint, saved_at FROM story_artifacts "
+                "failure_reason, input_fingerprint, provenance_json, saved_at FROM story_artifacts "
                 "WHERE run_id = ? ORDER BY story_id, stage",
                 (run_id,),
             ).fetchall()
@@ -282,7 +326,8 @@ def list_story_artifacts(run_id: str, *, stage: Optional[str] = None,
         StoryArtifactRecord(
             run_id=r[0], story_id=r[1], stage=r[2], payload=json.loads(r[3]),
             is_valid=bool(r[4]), validation_errors=json.loads(r[5]),
-            failure_reason=r[6], input_fingerprint=r[7], saved_at=r[8],
+            failure_reason=r[6], input_fingerprint=r[7],
+            provenance=(json.loads(r[8]) if r[8] is not None else None), saved_at=r[9],
         )
         for r in rows
     ]

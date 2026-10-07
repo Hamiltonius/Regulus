@@ -301,6 +301,338 @@ check("F10. the bootstrap validator agrees with a direct call to corpus_analyst_
       direct_result.is_valid is True)
 
 # ===========================================================================
+# G. --evidence-analysis-artifact bootstrap: validate + persist an
+# already-successful Evidence Analyst result for ONE story, with ZERO API
+# calls, so a dry-run (and later a live run) never re-pays for a story
+# that already has a validated Evidence Analyst outcome.
+# ===========================================================================
+EVIDENCE_CS01_FIXTURE = os.path.join(
+    acc.FIXTURES_DIR, "evidence_analyst_acceptance_CS-01_synthetic.json",
+)
+with open(EVIDENCE_CS01_FIXTURE, "r", encoding="utf-8") as f:
+    EVIDENCE_CS01_RAW_ARTIFACT = json.load(f)
+
+
+def _write_json(path, obj):
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(obj, fh)
+    return path
+
+
+# G1-G3: the full, realistic flow -- bootstrap Corpus Analyst first (as a
+# prerequisite, exactly like the real --corpus-analysis-artifact flow),
+# then bootstrap the CS-01 Evidence artifact on top of it, using the
+# EXACT command shape the user asked for.
+out_dir = _fresh_dir("g")
+report = acc.run_acceptance(
+    "brief001-acceptance-2", output_dir=out_dir, dry_run=True,
+    corpus_analysis_artifact_path=ACC3_CORPUS_ANALYST_FIXTURE,
+    evidence_analysis_artifact_path=EVIDENCE_CS01_FIXTURE,
+)
+story_reports_g = {s["story_id"]: s for s in report["stories"]}
+check("G1. after bootstrapping both Corpus Analyst and the CS-01 Evidence artifact, "
+      "CS-01 reports evidence_analyst='would_reuse' (not would_call)",
+      story_reports_g["CS-01"]["evidence_analyst"] == "would_reuse")
+check("G2. CS-01's Pass #2 is reported according to its own (unset) persisted state -- "
+      "'would_call', since no Pass #2 artifact was bootstrapped",
+      story_reports_g["CS-01"]["pass2"] == "would_call")
+check("G3. every OTHER story is unaffected -- still 'would_call' for Evidence Analyst, "
+      "exactly as a corpus-only bootstrap would report",
+      all(story_reports_g[sid]["evidence_analyst"] == "would_call"
+          for sid in ACC3_STORY_IDS if sid != "CS-01"))
+
+db_path_g = report["db_path"]
+
+# G4: the persisted Evidence artifact is reusable under the orchestrator's
+# OWN existing lookup (find_reusable_story_artifact), not a parallel/
+# bespoke reuse path -- proven by calling it directly with the fingerprint
+# the orchestrator itself would compute for CS-01's candidate_story.
+conn_g = store.get_connection(db_path_g)
+cs01_candidate_story = store.load_story_artifact("brief001-acceptance-2", "CS-01", "corpus_analyst", conn=conn_g).payload
+expected_fingerprint_g = store.compute_fingerprint(cs01_candidate_story)
+reusable_g = store.find_reusable_story_artifact(
+    "brief001-acceptance-2", "CS-01", "evidence_analyst", expected_fingerprint_g, conn=conn_g,
+)
+conn_g.close()
+check("G5. intelligence_store.find_reusable_story_artifact() -- the orchestrator's own "
+      "existing lookup, not a bespoke check -- finds the bootstrapped artifact reusable",
+      reusable_g is not None)
+
+# G6: the persisted content is BIT-FOR-BIT the artifact's own outcome.raw --
+# bootstrapping never alters substantive Evidence Analyst content.
+check("G6. the persisted Evidence Analyst payload is byte-for-byte identical to the "
+      "artifact file's own outcome.raw -- no substantive content alteration",
+      reusable_g.payload == EVIDENCE_CS01_RAW_ARTIFACT["outcome"]["raw"])
+
+# G7: omitting --evidence-analysis-artifact entirely preserves the exact
+# prior (corpus-only) behavior -- never an implicit fallback.
+out_dir = _fresh_dir("g7")
+report_g7 = acc.run_acceptance(
+    "dryrun-g7", output_dir=out_dir, dry_run=True,
+    corpus_analysis_artifact_path=ACC3_CORPUS_ANALYST_FIXTURE,
+)
+check("G7. omitting --evidence-analysis-artifact leaves EVERY story at "
+      "evidence_analyst='would_call' -- identical to corpus-only bootstrap behavior",
+      all(s["evidence_analyst"] == "would_call" for s in report_g7["stories"]))
+
+# G8: STORY MISMATCH fails closed -- an artifact whose own run_metadata.
+# story_id disagrees with its outcome.raw.story_id is internally
+# inconsistent and must never be accepted on story_id (or any single
+# field) alone.
+out_dir = _fresh_dir("g8")
+inconsistent = json.loads(json.dumps(EVIDENCE_CS01_RAW_ARTIFACT))  # deep copy
+inconsistent["run_metadata"]["story_id"] = "CS-02"  # disagrees with outcome.raw.story_id == "CS-01"
+inconsistent_path = _write_json(os.path.join(out_dir, "inconsistent.json"), inconsistent)
+raised = None
+try:
+    acc.run_acceptance(
+        "dryrun-g8", output_dir=out_dir, dry_run=True,
+        corpus_analysis_artifact_path=ACC3_CORPUS_ANALYST_FIXTURE,
+        evidence_analysis_artifact_path=inconsistent_path,
+    )
+except acc.EvidenceAnalysisArtifactInvalidError as e:
+    raised = e
+check("G8. an artifact whose run_metadata.story_id disagrees with outcome.raw.story_id "
+      "raises EvidenceAnalysisArtifactInvalidError (story_id alone never establishes "
+      "compatibility -- here the two 'story_id' sources don't even agree with each other)",
+      raised is not None)
+
+# G9: a story_id with NO persisted/bootstrapped Corpus Analyst candidate_story
+# under this run_id fails closed -- nothing to check compatibility against.
+out_dir = _fresh_dir("g9")
+no_corpus_story_id = json.loads(json.dumps(EVIDENCE_CS01_RAW_ARTIFACT))
+no_corpus_story_id["run_metadata"]["story_id"] = "CS-99"
+no_corpus_story_id["outcome"]["raw"]["story_id"] = "CS-99"
+no_corpus_path = _write_json(os.path.join(out_dir, "no_corpus.json"), no_corpus_story_id)
+raised = None
+try:
+    acc.run_acceptance(
+        "dryrun-g9", output_dir=out_dir, dry_run=True,
+        corpus_analysis_artifact_path=ACC3_CORPUS_ANALYST_FIXTURE,  # has no CS-99
+        evidence_analysis_artifact_path=no_corpus_path,
+    )
+except acc.EvidenceAnalysisArtifactInvalidError as e:
+    raised = e
+check("G9. a story_id with no persisted, valid Corpus Analyst candidate_story under this "
+      "run_id raises EvidenceAnalysisArtifactInvalidError, fails closed", raised is not None)
+
+# G10: FINGERPRINT/CONTENT MISMATCH fails closed -- the artifact's
+# question_findings were produced against a DIFFERENT version of CS-01's
+# research_questions than what is currently persisted (simulating the
+# candidate_story having been edited/replaced since the artifact was
+# generated). The compatibility re-validation must catch this
+# deterministically, via the same schema contract, not story_id alone.
+out_dir = _fresh_dir("g10")
+edited_corpus_analyst = json.loads(json.dumps(ACC3_CORPUS_ANALYST_RAW))
+for story in edited_corpus_analyst["candidate_stories"]:
+    if story["story_id"] == "CS-01":
+        story["research_questions"] = ["A completely different, unrelated research question."]
+edited_corpus_path = _write_json(os.path.join(out_dir, "edited_corpus_analyst.json"), edited_corpus_analyst)
+raised = None
+try:
+    acc.run_acceptance(
+        "dryrun-g10", output_dir=out_dir, dry_run=True,
+        corpus_analysis_artifact_path=edited_corpus_path,
+        evidence_analysis_artifact_path=EVIDENCE_CS01_FIXTURE,  # built against the ORIGINAL research_questions
+    )
+except acc.EvidenceAnalysisArtifactInvalidError as e:
+    raised = e
+check("G10. an Evidence artifact whose question_findings no longer correspond to the "
+      "CURRENT candidate_story's research_questions (content changed since the artifact "
+      "was produced) raises EvidenceAnalysisArtifactInvalidError -- a genuine content/"
+      "fingerprint mismatch, not merely a story_id check", raised is not None)
+db_files_g10 = [p for p in os.listdir(out_dir) if p.endswith(".db")]
+check("G10b. no persisted evidence_analyst row for CS-01 exists after the failed, "
+      "mismatched bootstrap (the Corpus Analyst bootstrap that preceded it is unaffected "
+      "and legitimately persisted -- only the Evidence bootstrap failed closed)",
+      len(db_files_g10) == 1
+      and store.load_story_artifact("dryrun-g10", "CS-01", "evidence_analyst",
+                                     db_path=os.path.join(out_dir, db_files_g10[0])) is None)
+
+# G11: a malformed/invalid artifact (outcome.is_valid=False -- i.e. the
+# live run itself recorded this as a FAILED attempt) fails closed and is
+# never a bootstrap candidate.
+out_dir = _fresh_dir("g11")
+failed_artifact = json.loads(json.dumps(EVIDENCE_CS01_RAW_ARTIFACT))
+failed_artifact["outcome"]["is_valid"] = False
+failed_artifact["outcome"]["failure_reason"] = "simulated_prior_failure"
+failed_path = _write_json(os.path.join(out_dir, "failed.json"), failed_artifact)
+raised = None
+try:
+    acc.run_acceptance(
+        "dryrun-g11", output_dir=out_dir, dry_run=True,
+        corpus_analysis_artifact_path=ACC3_CORPUS_ANALYST_FIXTURE,
+        evidence_analysis_artifact_path=failed_path,
+    )
+except acc.EvidenceAnalysisArtifactInvalidError as e:
+    raised = e
+check("G11. an artifact with outcome.is_valid=False raises EvidenceAnalysisArtifactInvalidError "
+      "-- only a VALID live outcome may ever be bootstrapped", raised is not None)
+
+# G12: an unparseable (non-JSON) Evidence artifact file also fails closed
+# with the typed error, not a raw json.JSONDecodeError leaking out.
+out_dir = _fresh_dir("g12")
+bad_json_path_g = os.path.join(out_dir, "not_json.json")
+with open(bad_json_path_g, "w", encoding="utf-8") as f:
+    f.write("{not valid json")
+raised = None
+try:
+    acc.run_acceptance(
+        "dryrun-g12", output_dir=out_dir, dry_run=True,
+        corpus_analysis_artifact_path=ACC3_CORPUS_ANALYST_FIXTURE,
+        evidence_analysis_artifact_path=bad_json_path_g,
+    )
+except acc.EvidenceAnalysisArtifactInvalidError as e:
+    raised = e
+check("G12. an unparseable (non-JSON) Evidence artifact raises "
+      "EvidenceAnalysisArtifactInvalidError (not a raw json.JSONDecodeError)",
+      raised is not None)
+
+# G13: a nonexistent Evidence artifact path fails closed.
+out_dir = _fresh_dir("g13")
+raised = None
+try:
+    acc.run_acceptance(
+        "dryrun-g13", output_dir=out_dir, dry_run=True,
+        corpus_analysis_artifact_path=ACC3_CORPUS_ANALYST_FIXTURE,
+        evidence_analysis_artifact_path="/tmp/this_evidence_artifact_does_not_exist.json",
+    )
+except acc.EvidenceAnalysisArtifactInvalidError as e:
+    raised = e
+check("G13. a nonexistent --evidence-analysis-artifact path raises "
+      "EvidenceAnalysisArtifactInvalidError, fails closed", raised is not None)
+
+# ===========================================================================
+# H. Legacy-artifact migration provenance: the CS-01 Evidence artifact
+# bootstrapped above (G1-G6) predates input fingerprinting, so its
+# compatibility with the current candidate_story was established by full
+# re-validation, not by verifying a historical fingerprint. That must be
+# explicit and auditable as store-level metadata, distinguishable from a
+# normal, freshly-generated, fingerprint-verified artifact, WITHOUT
+# changing reuse-eligibility semantics (still exactly is_valid +
+# fingerprint equality) or the substantive Evidence Analyst payload.
+# ===========================================================================
+
+# H1: the persisted legacy-migrated record carries explicit, auditable
+# provenance identifying it as a legacy_artifact_migration -- not merely
+# "reusable" with no trace of HOW compatibility was established.
+check("H1. the bootstrapped (legacy) CS-01 Evidence artifact's persisted "
+      "record carries provenance marking it as a legacy_artifact_migration",
+      isinstance(reusable_g.provenance, dict)
+      and reusable_g.provenance.get("kind") == "legacy_artifact_migration")
+check("H1b. the provenance explicitly records that NO historical input "
+      "fingerprint was verified (none existed on the source artifact)",
+      reusable_g.provenance.get("historical_input_fingerprint_verified") is False)
+check("H1c. the provenance explicitly records HOW compatibility was "
+      "established instead -- revalidation against the current candidate_story",
+      reusable_g.provenance.get("compatibility_established_by")
+      == "revalidation_against_current_candidate_story")
+check("H1d. the provenance records the source artifact path it was migrated from",
+      reusable_g.provenance.get("source_artifact_path") == EVIDENCE_CS01_FIXTURE)
+
+# H2: the substantive Evidence Analyst payload is unaffected by adding
+# provenance -- it is store-level metadata alongside the record, never
+# injected into the frozen analytical content (reaffirms G6 explicitly in
+# terms of the provenance feature).
+check("H2. provenance metadata is NOT folded into the substantive Evidence "
+      "Analyst payload -- the persisted payload remains byte-for-byte "
+      "identical to the artifact file's own outcome.raw, with no added keys",
+      reusable_g.payload == EVIDENCE_CS01_RAW_ARTIFACT["outcome"]["raw"]
+      and set(reusable_g.payload.keys()) == set(EVIDENCE_CS01_RAW_ARTIFACT["outcome"]["raw"].keys()))
+
+# H3: a NORMAL (non-legacy) artifact persisted without a provenance
+# argument -- exactly how a real, live-generated Evidence Analyst result
+# would be saved -- has provenance=None, explicitly distinguishing
+# "legacy migration" from "normal fingerprint-verified" persistence.
+out_dir_h3 = _fresh_dir("h3")
+db_path_h3 = os.path.join(out_dir_h3, "normal.db")
+conn_h3 = store.get_connection(db_path_h3)
+store.save_story_artifact(
+    "run-h3", "CS-NORMAL", "evidence_analyst", {"story_id": "CS-NORMAL", "question_findings": []},
+    is_valid=True, input_fingerprint="some-fingerprint-value", conn=conn_h3,
+)
+normal_record_h3 = store.load_story_artifact("run-h3", "CS-NORMAL", "evidence_analyst", conn=conn_h3)
+conn_h3.close()
+check("H3. a normally-persisted (live-style) Evidence Analyst artifact saved with no "
+      "provenance argument has provenance=None -- distinguishable from a legacy migration",
+      normal_record_h3 is not None and normal_record_h3.provenance is None)
+
+# H4: find_reusable_story_artifact()'s reuse decision is completely
+# unaffected by provenance -- a legacy-migrated artifact (provenance set)
+# and a normal artifact (provenance=None) are both reusable under the
+# EXACT SAME rule (is_valid + exact fingerprint equality), proving
+# provenance is purely informational and never a parallel reuse gate.
+conn_h4 = store.get_connection(db_path_h3)
+reusable_h4 = store.find_reusable_story_artifact(
+    "run-h3", "CS-NORMAL", "evidence_analyst", "some-fingerprint-value", conn=conn_h4,
+)
+conn_h4.close()
+check("H4. a normal (provenance=None) artifact is reusable under the identical "
+      "is_valid + fingerprint-equality rule used for the legacy-migrated one -- "
+      "provenance never special-cased by the reuse decision",
+      reusable_h4 is not None and reusable_h4.provenance is None)
+check("H4b. the legacy-migrated CS-01 artifact (provenance set) is ALSO reusable under "
+      "that same unmodified rule -- both paths produce a reusable record identically",
+      reusable_g is not None and reusable_g.provenance is not None)
+
+# H5: later orchestrator reuse still requires the assigned EXACT CURRENT
+# fingerprint -- migration grants no permanent/special exemption from
+# fingerprint discipline. Re-bootstrap CS-01's Corpus Analyst candidate
+# story under the SAME run_id with DIFFERENT content (simulating the
+# input changing after the legacy migration), then confirm a fresh lookup
+# using the newly-computed fingerprint no longer finds the stale
+# migrated Evidence artifact reusable.
+out_dir_h5 = _fresh_dir("h5")
+report_h5 = acc.run_acceptance(
+    "run-h5", output_dir=out_dir_h5, dry_run=True,
+    corpus_analysis_artifact_path=ACC3_CORPUS_ANALYST_FIXTURE,
+    evidence_analysis_artifact_path=EVIDENCE_CS01_FIXTURE,
+)
+db_path_h5 = report_h5["db_path"]
+conn_h5 = store.get_connection(db_path_h5)
+original_candidate_h5 = store.load_story_artifact("run-h5", "CS-01", "corpus_analyst", conn=conn_h5).payload
+original_fingerprint_h5 = store.compute_fingerprint(original_candidate_h5)
+reusable_before_h5 = store.find_reusable_story_artifact(
+    "run-h5", "CS-01", "evidence_analyst", original_fingerprint_h5, conn=conn_h5,
+)
+check("H5a. before any post-migration change, the legacy-migrated CS-01 Evidence "
+      "artifact is reusable under its assigned (current-at-migration-time) fingerprint",
+      reusable_before_h5 is not None)
+
+# Re-persist CS-01's candidate_story with different content under the
+# SAME run_id/db_path, exactly simulating the input changing after
+# migration (e.g. a re-run of Corpus Analyst Pass #1 producing a revised
+# story).
+changed_candidate_h5 = json.loads(json.dumps(original_candidate_h5))
+changed_candidate_h5["research_questions"] = ["A deliberately different research question, post-migration."]
+store.save_story_artifact(
+    "run-h5", "CS-01", "corpus_analyst", changed_candidate_h5, is_valid=True, conn=conn_h5,
+)
+new_fingerprint_h5 = store.compute_fingerprint(changed_candidate_h5)
+check("H5b. the input_fingerprint computed from the CHANGED candidate_story differs from "
+      "the one assigned to the legacy-migrated Evidence artifact at migration time",
+      new_fingerprint_h5 != original_fingerprint_h5)
+reusable_after_h5 = store.find_reusable_story_artifact(
+    "run-h5", "CS-01", "evidence_analyst", new_fingerprint_h5, conn=conn_h5,
+)
+check("H5c. after the candidate_story changes, a fresh reuse lookup using the NEW "
+      "fingerprint correctly finds the stale legacy-migrated artifact NOT reusable -- "
+      "migration grants no exemption from ordinary fingerprint discipline",
+      reusable_after_h5 is None)
+# The old artifact is still present and still carries its legacy
+# provenance (migration does not silently invalidate/delete history) --
+# it is simply no longer the fingerprint-matched candidate for reuse.
+stale_record_h5 = store.load_story_artifact("run-h5", "CS-01", "evidence_analyst", conn=conn_h5)
+check("H5d. the stale legacy-migrated record itself is untouched by the candidate_story "
+      "change -- still present, still is_valid, still carrying its original provenance "
+      "and its original (now-stale) fingerprint",
+      stale_record_h5 is not None and stale_record_h5.is_valid
+      and stale_record_h5.provenance is not None
+      and stale_record_h5.provenance.get("kind") == "legacy_artifact_migration"
+      and stale_record_h5.input_fingerprint == original_fingerprint_h5)
+conn_h5.close()
+
+# ===========================================================================
 # E. Isolation / no real network call anywhere in this file
 # ===========================================================================
 check("E1. no real network POST was attempted anywhere in this test file",

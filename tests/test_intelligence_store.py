@@ -345,6 +345,106 @@ check("O3. the migrated column reads back as None for the pre-existing row (neve
       rec.input_fingerprint is None)
 
 # ===========================================================================
+# P. provenance_json: additive, store-level-only metadata distinguishing a
+# legacy-artifact-migration bootstrap from normal, freshly-generated
+# persistence. Mirrors section O's migration pattern exactly, and proves
+# this new field never affects find_reusable_story_artifact()'s decision.
+# ===========================================================================
+
+# P1: save/load round-trip -- a provenance dict passed to
+# save_story_artifact() reads back identically via load_story_artifact().
+db_path = _fresh_db_path("p1.db")
+provenance_p1 = {
+    "kind": "legacy_artifact_migration",
+    "source_artifact_path": "/some/path/evidence_artifact.json",
+    "historical_input_fingerprint_verified": False,
+    "compatibility_established_by": "revalidation_against_current_candidate_story",
+    "migrated_at": "2026-10-06T00:00:00+00:00",
+}
+st.save_story_artifact("run-p1", "CS-01", "evidence_analyst", {"story_id": "CS-01"},
+                        is_valid=True, input_fingerprint="fp-p1", provenance=provenance_p1, db_path=db_path)
+rec_p1 = st.load_story_artifact("run-p1", "CS-01", "evidence_analyst", db_path=db_path)
+check("P1. a provenance dict passed to save_story_artifact() round-trips byte-for-byte "
+      "through load_story_artifact()", rec_p1 is not None and rec_p1.provenance == provenance_p1)
+
+# P2: omitting provenance entirely (the normal, live-artifact path) persists
+# provenance=None -- explicitly distinguishing "normal" from "legacy migration".
+db_path = _fresh_db_path("p2.db")
+st.save_story_artifact("run-p2", "CS-01", "evidence_analyst", {"story_id": "CS-01"},
+                        is_valid=True, input_fingerprint="fp-p2", db_path=db_path)  # provenance omitted
+rec_p2 = st.load_story_artifact("run-p2", "CS-01", "evidence_analyst", db_path=db_path)
+check("P2. a normally-persisted artifact saved with no provenance argument has "
+      "provenance=None after loading back", rec_p2 is not None and rec_p2.provenance is None)
+
+# P3: list_story_artifacts() also reads provenance back correctly, for both
+# a legacy-migrated record and a normal (provenance=None) one in the same run.
+db_path = _fresh_db_path("p3.db")
+st.save_story_artifact("run-p3", "CS-01", "evidence_analyst", {"story_id": "CS-01"},
+                        is_valid=True, input_fingerprint="fp-p3a", provenance=provenance_p1, db_path=db_path)
+st.save_story_artifact("run-p3", "CS-02", "evidence_analyst", {"story_id": "CS-02"},
+                        is_valid=True, input_fingerprint="fp-p3b", db_path=db_path)
+listed_p3 = {r.story_id: r for r in st.list_story_artifacts("run-p3", stage="evidence_analyst", db_path=db_path)}
+check("P3. list_story_artifacts() reads back provenance for a legacy-migrated record",
+      listed_p3["CS-01"].provenance == provenance_p1)
+check("P3b. list_story_artifacts() reads back provenance=None for a normal record, in the "
+      "same listing -- both kinds are distinguishable side by side",
+      listed_p3["CS-02"].provenance is None)
+
+# P4: provenance has ZERO effect on find_reusable_story_artifact()'s
+# reuse decision -- a legacy-migrated artifact (provenance set) and a
+# normal artifact (provenance=None) are reusable under the exact same
+# is_valid + fingerprint-equality rule, with no special-casing either way.
+db_path = _fresh_db_path("p4.db")
+st.save_story_artifact("run-p4", "CS-01", "evidence_analyst", {"story_id": "CS-01"},
+                        is_valid=True, input_fingerprint="fp-p4", provenance=provenance_p1, db_path=db_path)
+reusable_p4_legacy = st.find_reusable_story_artifact("run-p4", "CS-01", "evidence_analyst", "fp-p4", db_path=db_path)
+st.save_story_artifact("run-p4", "CS-02", "evidence_analyst", {"story_id": "CS-02"},
+                        is_valid=True, input_fingerprint="fp-p4b", db_path=db_path)
+reusable_p4_normal = st.find_reusable_story_artifact("run-p4", "CS-02", "evidence_analyst", "fp-p4b", db_path=db_path)
+check("P4. a legacy-migrated (provenance set) artifact is reusable under the unmodified rule",
+      reusable_p4_legacy is not None)
+check("P4b. a normal (provenance=None) artifact is reusable under that identical, unmodified "
+      "rule -- proving provenance is informational only, never consulted by the reuse decision",
+      reusable_p4_normal is not None)
+# A mismatched fingerprint still correctly refuses reuse regardless of provenance.
+reusable_p4_mismatch = st.find_reusable_story_artifact("run-p4", "CS-01", "evidence_analyst", "wrong-fp", db_path=db_path)
+check("P4c. a legacy-migrated artifact is still correctly refused reuse on fingerprint "
+      "mismatch -- provenance grants no exemption from fingerprint discipline",
+      reusable_p4_mismatch is None)
+
+# P5: schema migration -- a pre-existing story_artifacts table with no
+# provenance_json column (but WITH input_fingerprint, e.g. a db file from
+# before this feature) gets the column added automatically, mirroring O1-O3.
+db_path = _fresh_db_path("p5.db")
+_legacy_conn_p5 = _sqlite3.connect(db_path)
+_legacy_conn_p5.executescript("""
+CREATE TABLE story_artifacts (
+    run_id TEXT NOT NULL, story_id TEXT NOT NULL, stage TEXT NOT NULL,
+    payload_json TEXT NOT NULL, is_valid INTEGER NOT NULL,
+    validation_errors_json TEXT NOT NULL, failure_reason TEXT, input_fingerprint TEXT,
+    saved_at TEXT NOT NULL,
+    PRIMARY KEY (run_id, story_id, stage)
+);
+""")
+_legacy_conn_p5.execute(
+    "INSERT INTO story_artifacts (run_id, story_id, stage, payload_json, is_valid, "
+    "validation_errors_json, failure_reason, input_fingerprint, saved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ("run-legacy-p5", "CS-01", "evidence_analyst", json.dumps({"story_id": "CS-01"}), 1, "[]", None,
+     "fp-legacy-p5", "2026-01-01T00:00:00+00:00"),
+)
+_legacy_conn_p5.commit()
+_legacy_conn_p5.close()
+
+migrated_conn_p5 = st.get_connection(db_path)  # must not raise on the pre-existing, column-less table
+rec_p5 = st.load_story_artifact("run-legacy-p5", "CS-01", "evidence_analyst", conn=migrated_conn_p5)
+migrated_conn_p5.close()
+check("P5. get_connection migrates a table missing provenance_json without raising", rec_p5 is not None)
+check("P5b. the pre-existing row's data (including its prior input_fingerprint) survives "
+      "the migration untouched", rec_p5.payload == {"story_id": "CS-01"} and rec_p5.input_fingerprint == "fp-legacy-p5")
+check("P5c. the migrated provenance column reads back as None for the pre-existing row "
+      "(never fabricated)", rec_p5.provenance is None)
+
+# ===========================================================================
 # Summary
 # ===========================================================================
 import shutil

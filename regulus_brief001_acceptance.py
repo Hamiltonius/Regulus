@@ -71,6 +71,8 @@ from corpus_extractor import Corpus, CorpusObservation
 import corpus_analyst
 import corpus_analyst_schema
 import evidence_analyst
+import evidence_analyst_schema
+import evidence_retrieval
 import intelligence_analyst_pass2 as pass2
 import intelligence_editor as editor
 import intelligence_store as store
@@ -113,6 +115,17 @@ class CorpusAnalysisArtifactInvalidError(ValueError):
     does not exist. Always raised BEFORE bootstrap_corpus_analysis_
     artifact() persists anything and BEFORE any API call -- fail closed,
     never a silent partial acceptance of a bad artifact."""
+
+
+class EvidenceAnalysisArtifactInvalidError(ValueError):
+    """Raised by load_and_validate_evidence_analysis_artifact() when a
+    --evidence-analysis-artifact fails validation, is incompatible with
+    the candidate_story currently persisted for its story_id under the
+    target run_id, or cannot be parsed. Always raised BEFORE bootstrap_
+    evidence_analysis_artifact() persists anything and BEFORE any API
+    call -- fail closed, never a silent partial acceptance. story_id
+    alone is never sufficient to establish compatibility -- see the
+    function's own docstring for the full compatibility chain."""
 
 
 def load_golden_corpus(path: str = CORPUS_FIXTURE_PATH) -> Corpus:
@@ -220,6 +233,266 @@ def bootstrap_corpus_analysis_artifact(run_id: str, raw: dict, *, db_path: str) 
     finally:
         conn.close()
     return candidate_stories
+
+
+def load_and_validate_evidence_analysis_artifact(path: str, run_id: str, *, corpus: Corpus,
+                                                   db_path: str) -> tuple:
+    """Load a previously-produced, already-validated Evidence Analyst
+    diagnostic artifact (the JSON file evidence_analyst_acceptance_cs01.py
+    itself writes under evidence_acceptance_runs/) from `path`
+    (--evidence-analysis-artifact) and establish that it is safe to reuse
+    for `run_id`, making ZERO API/network requests.
+
+    COMPATIBILITY CHAIN (story_id alone is never sufficient -- every one
+    of these must hold, in order, or this raises
+    EvidenceAnalysisArtifactInvalidError and fails closed before anything
+    is persisted):
+
+      1. The file must parse as JSON and have the diagnostic shape
+         evidence_analyst_acceptance_cs01.py writes: run_metadata.
+         story_id, outcome.is_valid, outcome.raw (a dict).
+      2. outcome.is_valid must be True -- an artifact the live run itself
+         recorded as invalid/failed is never a bootstrap candidate, for
+         the same reason intelligence_store.py only ever attaches a
+         fingerprint to a VALID artifact: an invalid result must never
+         become silently reusable.
+      3. run_metadata.story_id and outcome.raw["story_id"] must agree
+         with each other (an internally inconsistent artifact is
+         rejected outright).
+      4. A candidate_story for that EXACT story_id must already be
+         persisted, and VALID, as the corpus_analyst stage for `run_id`
+         (i.e. Corpus Analyst Pass #1 -- live or bootstrapped via
+         --corpus-analysis-artifact -- must already be in the store for
+         this run_id). There is nothing to check compatibility against
+         otherwise.
+      5. The artifact's outcome.raw is RE-VALIDATED, right now, against
+         THAT CURRENT candidate_story using the EXACT SAME contract
+         run_live_evidence_analysis() itself uses on a live success path:
+         evidence_analyst_schema.validate_evidence_analysis(raw,
+         story=candidate_story, valid_document_numbers=<the current
+         corpus's own document numbers>, retrieval_results=<reconstructed
+         from the artifact's OWN already-persisted retrieval data -- no
+         new retrieval call is made>), PLUS evidence_analyst._find_
+         silently_dropped_documents(). This is the step that actually
+         catches a MISMATCHED artifact beyond story_id: the schema
+         enforces an exact 1:1 correspondence between raw.question_
+         findings and candidate_story["research_questions"], so an
+         artifact produced against a different (e.g. edited) version of
+         this story_id's candidate_story fails here deterministically,
+         not via a separate/weaker rule invented for this bootstrap path.
+      6. The artifact itself carries no fingerprint of its own (it
+         predates the resume/reuse fingerprinting mechanism entirely --
+         it is the standalone CS-01 diagnostic a plain acceptance script
+         writes). So the "exact Evidence input fingerprint" requirement
+         is satisfied by COMPUTING it, right now, via intelligence_
+         store.compute_fingerprint(candidate_story) -- the literal same
+         call _process_one_story() makes before an Evidence Analyst call
+         -- over the CURRENT persisted candidate_story (step 4). This is
+         not a comparison against a stale value (none exists); it is the
+         value that gets attached on persistence, so a LATER orchestrator
+         lookup (find_reusable_story_artifact) recomputes the identical
+         fingerprint from the same candidate_story and finds a match --
+         and, symmetrically, if that story_id's candidate_story content
+         ever changes afterward, the next computed fingerprint will
+         differ and reuse will correctly be refused, with no special
+         case needed here.
+
+    IMPORTANT -- this is a LEGACY ARTIFACT MIGRATION, not normal
+    fingerprint-verified reuse, and the distinction is load-bearing: a
+    normal reused artifact's fingerprint was computed from the SAME input
+    it was then later matched against (the orchestrator attached it from
+    the actual candidate_story it analyzed, and a subsequent lookup
+    recomputes from that same, unchanged candidate_story -- true history-
+    equality). This artifact predates fingerprinting entirely, so there
+    is no historical fingerprint to verify equality against -- step 6
+    above COMPUTES a fingerprint now, from the CURRENT candidate_story,
+    rather than confirming one that was already there. Compatibility with
+    the current input is instead established by the full re-validation in
+    step 5 (the same schema contract a live success path applies), not by
+    fingerprint equality against history. This return value's `provenance`
+    dict records that distinction explicitly and auditably (see module
+    docstring note on intelligence_store.save_story_artifact's
+    `provenance` parameter); it is store-level metadata only, never part
+    of the substantive Evidence Analyst payload, and is NEVER consulted by
+    find_reusable_story_artifact() -- reuse remains governed exclusively
+    by is_valid + exact input_fingerprint equality, identically for
+    legacy-migrated and normally-generated artifacts alike.
+
+    Returns (story_id, raw, fingerprint, provenance) on success. Raises
+    EvidenceAnalysisArtifactInvalidError, fail closed, otherwise.
+    """
+    if not os.path.isfile(path):
+        raise EvidenceAnalysisArtifactInvalidError(
+            f"--evidence-analysis-artifact path does not exist or is not a file: {path!r}"
+        )
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            artifact = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        raise EvidenceAnalysisArtifactInvalidError(
+            f"--evidence-analysis-artifact at {path!r} could not be read/parsed as JSON: {e}"
+        ) from e
+
+    if not isinstance(artifact, dict):
+        raise EvidenceAnalysisArtifactInvalidError(
+            f"--evidence-analysis-artifact at {path!r}: root must be a JSON object"
+        )
+
+    run_metadata = artifact.get("run_metadata")
+    outcome_dict = artifact.get("outcome")
+    if not isinstance(run_metadata, dict) or not isinstance(outcome_dict, dict):
+        raise EvidenceAnalysisArtifactInvalidError(
+            f"--evidence-analysis-artifact at {path!r} is missing the expected "
+            f"run_metadata/outcome diagnostic shape (not a structurally valid Evidence "
+            f"Analyst acceptance artifact)"
+        )
+
+    if outcome_dict.get("is_valid") is not True:
+        raise EvidenceAnalysisArtifactInvalidError(
+            f"--evidence-analysis-artifact at {path!r} has outcome.is_valid="
+            f"{outcome_dict.get('is_valid')!r} -- only an artifact the live run itself "
+            f"recorded as VALID may be bootstrapped; failure_reason="
+            f"{outcome_dict.get('failure_reason')!r}"
+        )
+
+    raw = outcome_dict.get("raw")
+    if not isinstance(raw, dict):
+        raise EvidenceAnalysisArtifactInvalidError(
+            f"--evidence-analysis-artifact at {path!r}: outcome.raw must be an object, "
+            f"got {type(raw).__name__}"
+        )
+
+    metadata_story_id = run_metadata.get("story_id")
+    raw_story_id = raw.get("story_id")
+    if not metadata_story_id or not raw_story_id:
+        raise EvidenceAnalysisArtifactInvalidError(
+            f"--evidence-analysis-artifact at {path!r}: run_metadata.story_id and/or "
+            f"outcome.raw.story_id is missing"
+        )
+    if metadata_story_id != raw_story_id:
+        raise EvidenceAnalysisArtifactInvalidError(
+            f"--evidence-analysis-artifact at {path!r}: run_metadata.story_id "
+            f"({metadata_story_id!r}) does not match outcome.raw.story_id ({raw_story_id!r}) -- "
+            f"internally inconsistent artifact, story_id alone cannot establish compatibility"
+        )
+    story_id = raw_story_id
+
+    conn = store.get_connection(db_path)
+    try:
+        corpus_record = store.load_story_artifact(run_id, story_id, "corpus_analyst", conn=conn)
+    finally:
+        conn.close()
+    if corpus_record is None or not corpus_record.is_valid:
+        raise EvidenceAnalysisArtifactInvalidError(
+            f"no persisted, VALID Corpus Analyst candidate_story found for story_id={story_id!r} "
+            f"under run_id={run_id!r} at {db_path!r} -- bootstrap/persist Corpus Analyst Pass #1 "
+            f"for this run_id first (e.g. via --corpus-analysis-artifact); story_id alone cannot "
+            f"establish compatibility with an input that isn't known yet"
+        )
+    candidate_story = corpus_record.payload
+    if candidate_story.get("story_id") != story_id:
+        raise EvidenceAnalysisArtifactInvalidError(
+            f"persisted corpus_analyst artifact for story_id={story_id!r} under run_id={run_id!r} "
+            f"carries a different story_id internally ({candidate_story.get('story_id')!r}) -- "
+            f"refusing to bootstrap against inconsistent persisted state"
+        )
+
+    valid_document_numbers = {
+        o.document_number for o in corpus.observations if o.document_number is not None
+    }
+
+    retrieval_dict = artifact.get("retrieval")
+    documents = []
+    if isinstance(retrieval_dict, dict) and isinstance(retrieval_dict.get("documents"), list):
+        try:
+            documents = [evidence_retrieval.RetrievedDocument(**d) for d in retrieval_dict["documents"]]
+        except TypeError as e:
+            raise EvidenceAnalysisArtifactInvalidError(
+                f"--evidence-analysis-artifact at {path!r}: retrieval.documents entries do not "
+                f"match the expected RetrievedDocument shape: {e}"
+            ) from e
+    retrieval_bundle = evidence_retrieval.EvidenceRetrievalBundle(
+        story_id=(retrieval_dict.get("story_id", story_id) if isinstance(retrieval_dict, dict) else story_id),
+        documents=documents,
+    )
+
+    # Re-validate RIGHT NOW against the CURRENT candidate_story, using the
+    # exact same contract run_live_evidence_analysis() itself applies on
+    # its own success path -- no separate/weaker rule. Makes no network
+    # call: retrieval_bundle was reconstructed above from the artifact's
+    # OWN already-persisted (already-paid-for) retrieval data.
+    result = evidence_analyst_schema.validate_evidence_analysis(
+        raw, story=candidate_story, valid_document_numbers=valid_document_numbers,
+        retrieval_results=retrieval_bundle.by_document_number(),
+    )
+    dropped_errors = evidence_analyst._find_silently_dropped_documents(raw, retrieval_bundle)
+    combined_errors = list(result.validation_errors) + dropped_errors
+    if not result.is_valid or dropped_errors:
+        raise EvidenceAnalysisArtifactInvalidError(
+            f"--evidence-analysis-artifact at {path!r} for story_id={story_id!r} is NOT "
+            f"compatible with the candidate_story currently persisted for run_id={run_id!r} "
+            f"(re-validation against the current input failed): {combined_errors}"
+        )
+
+    # The artifact predates fingerprinting and carries none of its own --
+    # this IS the exact computation _process_one_story() makes before an
+    # Evidence Analyst call, over the CURRENT persisted candidate_story.
+    # It is NOT a verification against a historical fingerprint (none
+    # exists); it is a freshly-assigned value, so this bootstrap is a
+    # LEGACY ARTIFACT MIGRATION, not normal fingerprint-verified reuse --
+    # see the docstring above and the `provenance` dict below, which
+    # records that distinction explicitly and auditably as store-level
+    # metadata (never part of the substantive Evidence Analyst payload,
+    # never consulted by find_reusable_story_artifact()).
+    fingerprint = store.compute_fingerprint(candidate_story)
+    provenance = {
+        "kind": "legacy_artifact_migration",
+        "source_artifact_path": path,
+        "historical_input_fingerprint_verified": False,
+        "compatibility_established_by": "revalidation_against_current_candidate_story",
+        "migrated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    return story_id, raw, fingerprint, provenance
+
+
+def bootstrap_evidence_analysis_artifact(run_id: str, story_id: str, raw: dict, fingerprint: str, *,
+                                          db_path: str, provenance: dict = None) -> None:
+    """Persist an externally-validated Evidence Analyst output (already
+    passed through load_and_validate_evidence_analysis_artifact()) into
+    the intelligence store for `run_id`/`story_id` as the evidence_
+    analyst stage, exactly as a successful live Evidence Analyst call
+    would be persisted (is_valid=True, with its input_fingerprint
+    attached) -- so the orchestrator's EXISTING find_reusable_story_
+    artifact() lookup picks it up on the next run/dry-run with no
+    special-casing. `raw` is persisted verbatim -- this function never
+    alters its substantive analytical content. Never called implicitly
+    -- only when the operator passes --evidence-analysis-artifact
+    explicitly. Makes no API call.
+
+    `provenance`, when given (as produced by load_and_validate_evidence_
+    analysis_artifact()), is persisted alongside the artifact as store-
+    level-only metadata (intelligence_store.StoryArtifactRecord.
+    provenance) marking this record as a LEGACY ARTIFACT MIGRATION --
+    i.e. one whose input_fingerprint could not be verified against any
+    historical value (the source artifact predates fingerprinting) and
+    whose compatibility with the current input was instead established
+    by full re-validation. It is never folded into `raw` (the frozen
+    Evidence Analyst payload/schema is untouched) and is never read by
+    find_reusable_story_artifact() or any other reuse-eligibility
+    decision -- reuse continues to require exact input_fingerprint
+    equality, identically whether or not provenance is set. A normally-
+    generated (live) Evidence Analyst artifact is saved with no
+    provenance argument, so its persisted record's provenance is None,
+    making legacy-migrated and normally-verified records explicitly
+    distinguishable at the store level."""
+    conn = store.get_connection(db_path)
+    try:
+        store.save_story_artifact(
+            run_id, story_id, "evidence_analyst", raw,
+            is_valid=True, input_fingerprint=fingerprint, provenance=provenance, conn=conn,
+        )
+    finally:
+        conn.close()
 
 
 def _outcome_to_diagnostic_dict(run_id: str, outcome: orch.OrchestrationOutcome, *,
@@ -447,7 +720,8 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
                     budget: "orch.RunBudget" = None,
                     circuit_breaker: "orch.CircuitBreaker" = None,
                     dry_run: bool = False,
-                    corpus_analysis_artifact_path: str = None) -> str:
+                    corpus_analysis_artifact_path: str = None,
+                    evidence_analysis_artifact_path: str = None) -> str:
     """Run one full, LIVE Regulus intelligence cycle over the golden
     Acceptance #3 corpus, persist it to a fresh timestamped SQLite file
     under output_dir (or to `db_path`, when given, enabling resume across
@@ -485,6 +759,19 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
     it makes zero actual requests, but conservatively still consumes one
     unit of the configured budget headroom.
 
+    `evidence_analysis_artifact_path` (--evidence-analysis-artifact) is
+    the analogous explicit, opt-in bootstrap for ONE already-validated
+    Evidence Analyst artifact (e.g. the diagnostic JSON evidence_analyst_
+    acceptance_cs01.py writes). See load_and_validate_evidence_analysis_
+    artifact() for the full compatibility chain it enforces before
+    persisting anything. Unlike the Corpus Analyst bootstrap, this needs
+    NO call_evidence_analyst override on a live run: _process_one_story()
+    already checks intelligence_store.find_reusable_story_artifact()
+    for a valid, fingerprint-matching Evidence artifact before ever
+    calling the Evidence Analyst, so persisting it here is sufficient on
+    its own for that story to be reused with zero further cost. Also
+    never an implicit fallback -- omitted, behavior is unchanged.
+
     Makes MULTIPLE real Anthropic API calls when NOT in dry-run mode (see
     module docstring) -- this is the live acceptance path, not a test.
     Never writes to bis_watcher.db / regulus_v3.DB_PATH, never sends
@@ -519,6 +806,23 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
         print(f"Bootstrapped Corpus Analyst Pass #1: {len(persisted)} candidate stories loaded from "
               f"{corpus_analysis_artifact_path!r}, validated, and persisted for run_id={run_id!r} "
               f"at {db_path!r} (corpus_analyst stage) -- no API call made.")
+
+    if evidence_analysis_artifact_path is not None:
+        # Validate BEFORE persisting anything and BEFORE any API call --
+        # an invalid/incompatible artifact raises here and nothing below runs.
+        evidence_story_id, evidence_raw, evidence_fingerprint, evidence_provenance = (
+            load_and_validate_evidence_analysis_artifact(
+                evidence_analysis_artifact_path, run_id, corpus=corpus, db_path=db_path,
+            )
+        )
+        bootstrap_evidence_analysis_artifact(
+            run_id, evidence_story_id, evidence_raw, evidence_fingerprint,
+            db_path=db_path, provenance=evidence_provenance,
+        )
+        print(f"Bootstrapped Evidence Analyst artifact for story_id={evidence_story_id!r} from "
+              f"{evidence_analysis_artifact_path!r}, validated against the current candidate_story, "
+              f"and persisted for run_id={run_id!r} at {db_path!r} (evidence_analyst stage, "
+              f"provenance=legacy_artifact_migration) -- no API call made.")
 
     if dry_run:
         return _dry_run_report(run_id, db_path=db_path, budget=budget, circuit_breaker=circuit_breaker)
@@ -608,6 +912,17 @@ def main():
                               "before being accepted (fails closed, before any API call, on an invalid "
                               "or mismatched artifact). Never an implicit fallback -- only used when "
                               "this flag is passed explicitly.")
+    parser.add_argument("--evidence-analysis-artifact", default=None,
+                         help="path to a previously-validated Evidence Analyst diagnostic artifact "
+                              "(e.g. evidence_acceptance_runs/evidence_analyst_acceptance_CS-01_"
+                              "<timestamp>.json) to bootstrap into the intelligence store for --run-id "
+                              "instead of making a live Evidence Analyst call for that story. "
+                              "Re-validated against the candidate_story currently persisted for its "
+                              "story_id under --run-id (which must already exist -- e.g. via "
+                              "--corpus-analysis-artifact) -- fails closed, before any API call, on a "
+                              "story-id mismatch, a content/fingerprint mismatch, or a malformed/"
+                              "invalid artifact. Never an implicit fallback -- only used when this flag "
+                              "is passed explicitly.")
     args = parser.parse_args()
 
     reporting_period = None
@@ -629,6 +944,7 @@ def main():
         args.run_id, reporting_period=reporting_period, output_dir=args.output_dir,
         db_path=args.db_path, budget=budget, circuit_breaker=circuit_breaker, dry_run=args.dry_run,
         corpus_analysis_artifact_path=args.corpus_analysis_artifact,
+        evidence_analysis_artifact_path=args.evidence_analysis_artifact,
     )
 
 
