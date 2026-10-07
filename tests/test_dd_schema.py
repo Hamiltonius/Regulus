@@ -445,7 +445,12 @@ check("no unexpected top-level files added under repo root",
                                      # its diagnostic JSON artifacts into -- may or may not
                                      # exist on disk depending on whether it's been run
                                      # locally.
-                                     "intelligence_pass2_acceptance_runs"} == set())
+                                     "intelligence_pass2_acceptance_runs",
+                                     # Knowledge layer, deterministic Epistemic Scorer and
+                                     # Pattern/Variance v1: offline, no API calls, isolated
+                                     # from the live pipeline.
+                                     "backfill_knowledge_layer.py", "knowledge_projection.py",
+                                     "epistemic_scorer.py", "pattern_variance.py"} == set())
 
 # ---------------------------------------------------------------------------
 # Summary
