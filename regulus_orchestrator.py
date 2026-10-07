@@ -256,6 +256,17 @@ class CircuitBreaker:
         }
 
 
+def _underlying_evidence_error_category(attempts) -> Optional[str]:
+    """Category of the last attempt that was not a local budget block; falls back to the last
+    attempt's category if every attempt was budget-blocked, or None if there were no attempts."""
+    if not attempts:
+        return None
+    for a in reversed(attempts):
+        if a.error_category != "budget_exhausted":
+            return a.error_category
+    return attempts[-1].error_category
+
+
 @dataclass
 class StoryCycleResult:
     """Per-story outcome of one orchestration cycle."""
@@ -267,6 +278,7 @@ class StoryCycleResult:
     evidence_error_category: Optional[str] = None
     evidence_reused: bool = False
     evidence_reused_from_memory: bool = False
+    evidence_attempts: list = field(default_factory=list)  # EvidenceAnalystAttemptDiagnostics.to_dict(), live calls only
     pass2_is_valid: Optional[bool] = None
     pass2_failure_reason: Optional[str] = None
     pass2_editor_eligibility: Optional[str] = None
@@ -447,6 +459,7 @@ def _process_one_story(run_id: str, candidate_story: dict, corpus: Corpus, *, ap
         evidence_is_valid = True
         evidence_failure_reason = None
         evidence_error_category = None
+        evidence_attempts = []
         evidence_reused = True
     else:
         real_evidence_caller = call_evidence_analyst or evidence_analyst.call_anthropic_evidence_analyst
@@ -470,9 +483,9 @@ def _process_one_story(run_id: str, candidate_story: dict, corpus: Corpus, *, ap
         evidence_raw = evidence_outcome.raw
         evidence_is_valid = evidence_outcome.is_valid
         evidence_failure_reason = evidence_outcome.failure_reason
-        evidence_error_category = (
-            evidence_outcome.attempts[-1].error_category if evidence_outcome.attempts else None
-        )
+        # A locally blocked retry (budget_exhausted) must not mask the underlying external failure.
+        evidence_error_category = _underlying_evidence_error_category(evidence_outcome.attempts)
+        evidence_attempts = [a.to_dict() for a in evidence_outcome.attempts]
         evidence_reused = False
 
         store.save_story_artifact(
@@ -497,6 +510,7 @@ def _process_one_story(run_id: str, candidate_story: dict, corpus: Corpus, *, ap
             exclusion_reason=evidence_failure_reason or "evidence_analyst_invalid",
             evidence_is_valid=False, evidence_failure_reason=evidence_failure_reason,
             evidence_error_category=evidence_error_category,
+            evidence_attempts=evidence_attempts,
         )
 
     pass2_fingerprint = store.compute_fingerprint(candidate_story, evidence_raw)
@@ -530,7 +544,7 @@ def _process_one_story(run_id: str, candidate_story: dict, corpus: Corpus, *, ap
                                        failure_reason="pass2_unexpected_exception", conn=conn)
             return StoryCycleResult(story_id=story_id, included=False,
                                      exclusion_reason="pass2_unexpected_exception",
-                                     evidence_is_valid=True, evidence_reused=evidence_reused, evidence_reused_from_memory=evidence_from_memory, exception=str(e))
+                                     evidence_is_valid=True, evidence_reused=evidence_reused, evidence_reused_from_memory=evidence_from_memory, evidence_attempts=evidence_attempts, exception=str(e))
 
         pass2_raw = pass2_outcome.raw
         pass2_is_valid = pass2_outcome.is_valid
@@ -552,6 +566,7 @@ def _process_one_story(run_id: str, candidate_story: dict, corpus: Corpus, *, ap
             story_id=story_id, included=False,
             exclusion_reason=pass2_failure_reason or "pass2_invalid",
             evidence_is_valid=True, evidence_reused=evidence_reused, evidence_reused_from_memory=evidence_from_memory,
+            evidence_attempts=evidence_attempts,
             pass2_is_valid=False, pass2_failure_reason=pass2_failure_reason,
         )
 
@@ -560,12 +575,14 @@ def _process_one_story(run_id: str, candidate_story: dict, corpus: Corpus, *, ap
         return StoryCycleResult(
             story_id=story_id, included=False, exclusion_reason="pass2_editor_eligibility_not_eligible",
             evidence_is_valid=True, evidence_reused=evidence_reused, evidence_reused_from_memory=evidence_from_memory,
+            evidence_attempts=evidence_attempts,
             pass2_is_valid=True, pass2_editor_eligibility=editor_eligibility, pass2_reused=pass2_reused, pass2_reused_from_memory=pass2_from_memory,
         )
 
     return StoryCycleResult(
         story_id=story_id, included=True,
         evidence_is_valid=True, evidence_reused=evidence_reused, evidence_reused_from_memory=evidence_from_memory,
+        evidence_attempts=evidence_attempts,
         pass2_is_valid=True, pass2_editor_eligibility=editor_eligibility, pass2_reused=pass2_reused, pass2_reused_from_memory=pass2_from_memory,
     )
 
