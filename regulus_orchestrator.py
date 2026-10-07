@@ -87,13 +87,16 @@ as reusable, by construction -- see intelligence_store.py's own
 
 import logging
 import os
+import sqlite3
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 from corpus_extractor import Corpus
 import corpus_analyst
 import evidence_analyst
+import evidence_analyst_schema
 import intelligence_analyst_pass2 as pass2
+import intelligence_analyst_pass2_schema
 import intelligence_editor as editor
 import intelligence_store as store
 
@@ -263,10 +266,12 @@ class StoryCycleResult:
     evidence_failure_reason: Optional[str] = None
     evidence_error_category: Optional[str] = None
     evidence_reused: bool = False
+    evidence_reused_from_memory: bool = False
     pass2_is_valid: Optional[bool] = None
     pass2_failure_reason: Optional[str] = None
     pass2_editor_eligibility: Optional[str] = None
     pass2_reused: bool = False
+    pass2_reused_from_memory: bool = False
     exception: Optional[str] = None  # set only if an unexpected exception was caught
 
 
@@ -294,11 +299,117 @@ class OrchestrationOutcome:
         return [s.story_id for s in self.stories if not s.included]
 
 
+# ---------------------------------------------------------------------------
+# CROSS-DATABASE MEMORY REUSE (optional; memory_sources=None == old behavior)
+#
+# A "memory source" is a (db_path, run_id) pair naming a PRIOR intelligence
+# store whose already-paid-for, VALID Evidence Analyst / Pass #2 artifacts may
+# stand in for a new call. Lookup order is: current run first (unchanged), then
+# memory sources in the order supplied. A memory artifact is reused ONLY if,
+# all deterministically and with no model call: (1) the memory DB opens
+# read-only (never created, migrated or written); (2) find_reusable_story_
+# artifact() accepts it (is_valid AND exact input fingerprint); (3) any
+# component versions recorded in its provenance equal the current ones;
+# (4) it passes the CURRENT schema validator. Any failure, including an
+# unavailable DB, returns None and the caller proceeds on the normal path.
+# A hit is copied into the CURRENT run with provenance so that
+# reconstruct_editor_inputs() remains the only Editor input source.
+#
+# KNOWN LIMITATION: the input fingerprint covers inputs only, not prompt or
+# schema versions. Versions are recorded in provenance (see
+# _component_versions) and compared when present; artifacts persisted before
+# this existed carry none and are accepted on fingerprint + revalidation alone.
+# Evidence revalidation cannot re-check retrieval identity cross-checks
+# (retrieval bundles are not persisted in story_artifacts).
+# ---------------------------------------------------------------------------
+
+def _component_versions(stage: str) -> dict:
+    if stage == "evidence_analyst":
+        return {"schema_version": evidence_analyst.EVIDENCE_ANALYST_SCHEMA_VERSION,
+                "prompt_version": evidence_analyst.PROMPT_VERSION}
+    return {"schema_version": pass2.SCHEMA_VERSION, "prompt_version": pass2.PROMPT_VERSION}
+
+
+def _open_readonly(db_path: str) -> sqlite3.Connection:
+    conn = sqlite3.connect(f"file:{os.path.abspath(db_path)}?mode=ro", uri=True)
+    conn.execute("PRAGMA query_only = ON")
+    return conn
+
+
+def _revalidates(stage: str, payload: Any, candidate_story: dict, corpus: Corpus,
+                 evidence_payload: Any) -> bool:
+    if stage == "evidence_analyst":
+        doc_numbers = {o.document_number for o in corpus.observations if o.document_number is not None}
+        return evidence_analyst_schema.validate_evidence_analysis(
+            payload, story=candidate_story, valid_document_numbers=doc_numbers,
+        ).is_valid
+    return intelligence_analyst_pass2_schema.validate_pass2_reassessment(
+        payload, story_id=candidate_story.get("story_id"), original_story=candidate_story,
+        evidence_package=evidence_payload,
+    ).is_valid
+
+
+def find_memory_artifact(stage: str, candidate_story: dict, fingerprint: str, corpus: Corpus, *,
+                         memory_sources: Optional[list], evidence_payload: Any = None):
+    """Read-only, non-persisting lookup. Returns (StoryArtifactRecord, (db_path, run_id)) for the
+    first memory source holding a reusable artifact, else None. Shared by the live path and the
+    dry-run so the two cannot diverge. Never raises."""
+    story_id = candidate_story.get("story_id", "UNKNOWN")
+    for source in (memory_sources or []):
+        db_path, source_run_id = source
+        try:
+            ro = _open_readonly(db_path)
+            try:
+                rec = store.find_reusable_story_artifact(source_run_id, story_id, stage, fingerprint, conn=ro)
+            finally:
+                ro.close()
+            if rec is None:
+                continue
+            recorded = (rec.provenance or {}).get("component_versions")
+            if recorded is not None and recorded != _component_versions(stage):
+                log.warning("memory reuse refused (%s, %s): component version mismatch", stage, story_id)
+                continue
+            if not _revalidates(stage, rec.payload, candidate_story, corpus, evidence_payload):
+                log.warning("memory reuse refused (%s, %s): current-schema revalidation failed", stage, story_id)
+                continue
+            return rec, source
+        except Exception as e:  # unavailable/legacy/corrupt memory DB: fail closed to normal path
+            log.warning("memory source %r unusable for %s/%s: %s", source, story_id, stage, e)
+            continue
+    return None
+
+
+def _adopt_memory_artifact(run_id: str, story_id: str, stage: str, fingerprint: str, hit, conn):
+    """Copy a memory hit into the CURRENT run with provenance. Returns the record, or None on
+    any failure (caller then takes the normal path)."""
+    rec, (db_path, source_run_id) = hit
+    recorded = (rec.provenance or {}).get("component_versions")
+    provenance = {
+        "kind": "memory_reuse",
+        "source_db": os.path.abspath(db_path),
+        "source_run_id": source_run_id,
+        "stage": stage,
+        "source_artifact_saved_at": rec.saved_at,
+        "source_input_fingerprint": rec.input_fingerprint,
+        "source_component_versions": recorded,
+    }
+    if recorded is not None:
+        provenance["component_versions"] = recorded
+    try:
+        store.save_story_artifact(run_id, story_id, stage, rec.payload, is_valid=True,
+                                   input_fingerprint=fingerprint, provenance=provenance, conn=conn)
+    except Exception as e:
+        log.warning("could not persist memory-reused %s artifact for %s: %s", stage, story_id, e)
+        return None
+    return rec
+
+
 def _process_one_story(run_id: str, candidate_story: dict, corpus: Corpus, *, api_key: Optional[str],
                         call_evidence_analyst: Optional[Callable], retrieve: Optional[Callable],
                         call_pass2: Optional[Callable], conn,
                         budget: Optional[RunBudget] = None,
-                        circuit_breaker: Optional[CircuitBreaker] = None) -> StoryCycleResult:
+                        circuit_breaker: Optional[CircuitBreaker] = None,
+                        memory_sources: Optional[list] = None) -> StoryCycleResult:
     """Run the Evidence Analyst and Pass #2 for exactly one candidate_story,
     persisting every stage's outcome. Never raises -- any unexpected
     exception is caught here so that one story's failure cannot abort
@@ -322,6 +433,14 @@ def _process_one_story(run_id: str, candidate_story: dict, corpus: Corpus, *, ap
     reusable_evidence = store.find_reusable_story_artifact(
         run_id, story_id, "evidence_analyst", evidence_fingerprint, conn=conn,
     )
+    evidence_from_memory = False
+    if reusable_evidence is None and memory_sources:
+        hit = find_memory_artifact("evidence_analyst", candidate_story, evidence_fingerprint, corpus,
+                                   memory_sources=memory_sources)
+        if hit is not None:
+            reusable_evidence = _adopt_memory_artifact(run_id, story_id, "evidence_analyst",
+                                                       evidence_fingerprint, hit, conn)
+            evidence_from_memory = reusable_evidence is not None
 
     if reusable_evidence is not None:
         evidence_raw = reusable_evidence.payload
@@ -362,6 +481,8 @@ def _process_one_story(run_id: str, candidate_story: dict, corpus: Corpus, *, ap
             is_valid=evidence_is_valid, validation_errors=evidence_outcome.validation_errors,
             failure_reason=evidence_failure_reason,
             input_fingerprint=(evidence_fingerprint if evidence_is_valid else None),
+            provenance=({"component_versions": _component_versions("evidence_analyst")}
+                        if evidence_is_valid else None),
             conn=conn,
         )
 
@@ -382,6 +503,13 @@ def _process_one_story(run_id: str, candidate_story: dict, corpus: Corpus, *, ap
     reusable_pass2 = store.find_reusable_story_artifact(
         run_id, story_id, "pass2", pass2_fingerprint, conn=conn,
     )
+    pass2_from_memory = False
+    if reusable_pass2 is None and memory_sources:
+        hit = find_memory_artifact("pass2", candidate_story, pass2_fingerprint, corpus,
+                                   memory_sources=memory_sources, evidence_payload=evidence_raw)
+        if hit is not None:
+            reusable_pass2 = _adopt_memory_artifact(run_id, story_id, "pass2", pass2_fingerprint, hit, conn)
+            pass2_from_memory = reusable_pass2 is not None
 
     if reusable_pass2 is not None:
         pass2_raw = reusable_pass2.payload
@@ -402,7 +530,7 @@ def _process_one_story(run_id: str, candidate_story: dict, corpus: Corpus, *, ap
                                        failure_reason="pass2_unexpected_exception", conn=conn)
             return StoryCycleResult(story_id=story_id, included=False,
                                      exclusion_reason="pass2_unexpected_exception",
-                                     evidence_is_valid=True, evidence_reused=evidence_reused, exception=str(e))
+                                     evidence_is_valid=True, evidence_reused=evidence_reused, evidence_reused_from_memory=evidence_from_memory, exception=str(e))
 
         pass2_raw = pass2_outcome.raw
         pass2_is_valid = pass2_outcome.is_valid
@@ -415,6 +543,7 @@ def _process_one_story(run_id: str, candidate_story: dict, corpus: Corpus, *, ap
             is_valid=pass2_is_valid, validation_errors=pass2_outcome.validation_errors,
             failure_reason=pass2_failure_reason,
             input_fingerprint=(pass2_fingerprint if pass2_is_valid else None),
+            provenance=({"component_versions": _component_versions("pass2")} if pass2_is_valid else None),
             conn=conn,
         )
 
@@ -422,7 +551,7 @@ def _process_one_story(run_id: str, candidate_story: dict, corpus: Corpus, *, ap
         return StoryCycleResult(
             story_id=story_id, included=False,
             exclusion_reason=pass2_failure_reason or "pass2_invalid",
-            evidence_is_valid=True, evidence_reused=evidence_reused,
+            evidence_is_valid=True, evidence_reused=evidence_reused, evidence_reused_from_memory=evidence_from_memory,
             pass2_is_valid=False, pass2_failure_reason=pass2_failure_reason,
         )
 
@@ -430,14 +559,14 @@ def _process_one_story(run_id: str, candidate_story: dict, corpus: Corpus, *, ap
     if editor_eligibility == "not_eligible":
         return StoryCycleResult(
             story_id=story_id, included=False, exclusion_reason="pass2_editor_eligibility_not_eligible",
-            evidence_is_valid=True, evidence_reused=evidence_reused,
-            pass2_is_valid=True, pass2_editor_eligibility=editor_eligibility, pass2_reused=pass2_reused,
+            evidence_is_valid=True, evidence_reused=evidence_reused, evidence_reused_from_memory=evidence_from_memory,
+            pass2_is_valid=True, pass2_editor_eligibility=editor_eligibility, pass2_reused=pass2_reused, pass2_reused_from_memory=pass2_from_memory,
         )
 
     return StoryCycleResult(
         story_id=story_id, included=True,
-        evidence_is_valid=True, evidence_reused=evidence_reused,
-        pass2_is_valid=True, pass2_editor_eligibility=editor_eligibility, pass2_reused=pass2_reused,
+        evidence_is_valid=True, evidence_reused=evidence_reused, evidence_reused_from_memory=evidence_from_memory,
+        pass2_is_valid=True, pass2_editor_eligibility=editor_eligibility, pass2_reused=pass2_reused, pass2_reused_from_memory=pass2_from_memory,
     )
 
 
@@ -451,6 +580,7 @@ def run_intelligence_cycle(run_id: str, corpus: Corpus, reporting_period: dict, 
                             call_editor: Optional[Callable] = None,
                             budget: Optional[RunBudget] = None,
                             circuit_breaker: Optional[CircuitBreaker] = None,
+                            memory_sources: Optional[list] = None,
                             ) -> OrchestrationOutcome:
     """Run one full Regulus intelligence cycle over `corpus`:
 
@@ -521,7 +651,7 @@ def run_intelligence_cycle(run_id: str, corpus: Corpus, reporting_period: dict, 
                 run_id, candidate_story, corpus, api_key=api_key,
                 call_evidence_analyst=call_evidence_analyst, retrieve=retrieve,
                 call_pass2=call_pass2, conn=conn,
-                budget=budget, circuit_breaker=circuit_breaker,
+                budget=budget, circuit_breaker=circuit_breaker, memory_sources=memory_sources,
             )
             story_results.append(result)
 

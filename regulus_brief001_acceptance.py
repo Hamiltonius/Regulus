@@ -249,7 +249,8 @@ def compute_targeted_budget(budget: "orch.RunBudget", targeted_new_call_cap: int
     )
 
 
-def _resolve_story_reuse_state(run_id: str, candidate_story: dict, *, conn) -> dict:
+def _resolve_story_reuse_state(run_id: str, candidate_story: dict, *, conn,
+                                memory_sources: list = None, corpus: Corpus = None) -> dict:
     """Determine, for ONE candidate_story and WITHOUT making any
     API/network call, whether its Evidence Analyst and Pass #2 stages
     are already reusable under `run_id` -- via intelligence_store.
@@ -259,20 +260,37 @@ def _resolve_story_reuse_state(run_id: str, candidate_story: dict, *, conn) -> d
     is NOT yet reusable). Shared by both the general --dry-run report
     (every story) and --story-id targeted execution (one story only),
     so the two can never diverge on what "would_reuse"/"would_call"
-    means for a given story."""
+    means for a given story.
+
+    When `memory_sources` is supplied, a local miss is followed by the
+    orchestrator's OWN read-only memory lookup (orch.find_memory_artifact,
+    the same function the live path uses; `corpus` is then required), and
+    states become would_reuse_local / would_reuse_from_memory / would_call.
+    With no memory_sources the vocabulary is the original would_reuse /
+    would_call, unchanged."""
     story_id = candidate_story.get("story_id", "UNKNOWN")
+    use_memory = bool(memory_sources)
+    local_label = "would_reuse_local" if use_memory else "would_reuse"
     evidence_fingerprint = store.compute_fingerprint(candidate_story)
     reusable_evidence = store.find_reusable_story_artifact(
         run_id, story_id, "evidence_analyst", evidence_fingerprint, conn=conn,
     )
     new_calls_needed = 0
+    evidence_source = pass2_source = None
     if reusable_evidence is not None:
-        evidence_state = "would_reuse"
+        evidence_state = local_label
         evidence_payload = reusable_evidence.payload
     else:
-        evidence_state = "would_call"
-        evidence_payload = None
-        new_calls_needed += 1
+        hit = (orch.find_memory_artifact("evidence_analyst", candidate_story, evidence_fingerprint, corpus,
+                                         memory_sources=memory_sources) if use_memory else None)
+        if hit is not None:
+            evidence_state = "would_reuse_from_memory"
+            evidence_payload = hit[0].payload
+            evidence_source = list(hit[1])
+        else:
+            evidence_state = "would_call"
+            evidence_payload = None
+            new_calls_needed += 1
 
     if evidence_payload is not None:
         pass2_fingerprint = store.compute_fingerprint(candidate_story, evidence_payload)
@@ -280,10 +298,17 @@ def _resolve_story_reuse_state(run_id: str, candidate_story: dict, *, conn) -> d
             run_id, story_id, "pass2", pass2_fingerprint, conn=conn,
         )
         if reusable_pass2 is not None:
-            pass2_state = "would_reuse"
+            pass2_state = local_label
         else:
-            pass2_state = "would_call"
-            new_calls_needed += 1
+            hit = (orch.find_memory_artifact("pass2", candidate_story, pass2_fingerprint, corpus,
+                                             memory_sources=memory_sources,
+                                             evidence_payload=evidence_payload) if use_memory else None)
+            if hit is not None:
+                pass2_state = "would_reuse_from_memory"
+                pass2_source = list(hit[1])
+            else:
+                pass2_state = "would_call"
+                new_calls_needed += 1
     else:
         pass2_state = "unknown_pending_evidence_call"
         new_calls_needed += 1  # conservative: assume it would run too
@@ -292,6 +317,8 @@ def _resolve_story_reuse_state(run_id: str, candidate_story: dict, *, conn) -> d
         "story_id": story_id,
         "evidence_analyst": evidence_state,
         "pass2": pass2_state,
+        "evidence_memory_source": evidence_source,
+        "pass2_memory_source": pass2_source,
         "new_calls_needed": new_calls_needed,
     }
 
@@ -688,10 +715,12 @@ def _outcome_to_diagnostic_dict(run_id: str, outcome: orch.OrchestrationOutcome,
                 "evidence_failure_reason": s.evidence_failure_reason,
                 "evidence_error_category": s.evidence_error_category,
                 "evidence_reused": s.evidence_reused,
+                "evidence_reused_from_memory": s.evidence_reused_from_memory,
                 "pass2_is_valid": s.pass2_is_valid,
                 "pass2_failure_reason": s.pass2_failure_reason,
                 "pass2_editor_eligibility": s.pass2_editor_eligibility,
                 "pass2_reused": s.pass2_reused,
+                "pass2_reused_from_memory": s.pass2_reused_from_memory,
                 "exception": s.exception,
             }
             for s in outcome.stories
@@ -754,7 +783,8 @@ def _print_budget_plan(budget: orch.RunBudget, circuit_breaker: orch.CircuitBrea
 
 
 def _dry_run_report(run_id: str, *, db_path: str, budget: orch.RunBudget,
-                     circuit_breaker: orch.CircuitBreaker, story_id: str = None) -> dict:
+                     circuit_breaker: orch.CircuitBreaker, story_id: str = None,
+                     memory_sources: list = None) -> dict:
     """Report what a real run WOULD do, making ZERO API requests.
 
     Loads the corpus (a local, read-only fixture load -- not a model
@@ -809,6 +839,7 @@ def _dry_run_report(run_id: str, *, db_path: str, budget: orch.RunBudget,
 
     report: dict = {
         "run_id": run_id,
+        "memory_sources": [list(m) for m in (memory_sources or [])],
         "db_path": db_path,
         "db_path_exists": os.path.exists(db_path),
         "budget": budget.summary(),
@@ -873,23 +904,27 @@ def _dry_run_report(run_id: str, *, db_path: str, budget: orch.RunBudget,
     any_would_call_editor_input = False
     max_new_external_llm_requests = 0
     for candidate_story in stories_to_report:
-        state = _resolve_story_reuse_state(run_id, candidate_story, conn=conn)
+        state = _resolve_story_reuse_state(run_id, candidate_story, conn=conn,
+                                           memory_sources=memory_sources, corpus=corpus)
         story_id_i = state["story_id"]
         story_report = {"story_id": story_id_i, "evidence_analyst": state["evidence_analyst"],
                          "pass2": state["pass2"]}
+        if memory_sources:
+            story_report["evidence_memory_source"] = state["evidence_memory_source"]
+            story_report["pass2_memory_source"] = state["pass2_memory_source"]
         max_new_external_llm_requests += state["new_calls_needed"]
 
         if state["evidence_analyst"] == "would_call":
             worst_case += evidence_analyst.EVIDENCE_ANALYST_MAX_ATTEMPTS
         if state["pass2"] in ("would_call", "unknown_pending_evidence_call"):
             worst_case += pass2.PASS2_MAX_ATTEMPTS
-        if state["pass2"] in ("would_reuse", "would_call"):
+        if state["pass2"] != "unknown_pending_evidence_call":
             any_would_call_editor_input = True
 
         report["stories"].append(story_report)
         if story_id is not None:
             print(f"  {story_id_i} Evidence Analyst: {story_report['evidence_analyst']}, "
-                  f"{'zero calls' if story_report['evidence_analyst'] == 'would_reuse' else 'up to 1 new call'}")
+                  f"{'zero calls' if story_report['evidence_analyst'].startswith('would_reuse') else 'up to 1 new call'}")
             print(f"  {story_id_i} Pass #2        : {story_report['pass2']}")
         else:
             print(f"    - {story_id_i}: evidence_analyst={story_report['evidence_analyst']}, "
@@ -914,6 +949,10 @@ def _dry_run_report(run_id: str, *, db_path: str, budget: orch.RunBudget,
     elif any_would_call_editor_input:
         worst_case += editor.EDITOR_MAX_ATTEMPTS
         report["would_call_editor"] = True
+        if memory_sources:
+            report["max_new_external_llm_requests"] = max_new_external_llm_requests + 1  # +1 Editor call
+            print(f"  maximum NEW external LLM requests (stage calls + 1 Editor call, "
+                  f"before Editor retry): {report['max_new_external_llm_requests']}")
     else:
         report["would_call_editor"] = False
 
@@ -942,7 +981,8 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
                     dry_run: bool = False,
                     corpus_analysis_artifact_path: str = None,
                     evidence_analysis_artifact_path: str = None,
-                    story_id: str = None) -> str:
+                    story_id: str = None,
+                    memory_sources: list = None) -> str:
     """Run one full, LIVE Regulus intelligence cycle over the golden
     Acceptance #3 corpus, persist it to a fresh timestamped SQLite file
     under output_dir (or to `db_path`, when given, enabling resume across
@@ -1119,7 +1159,7 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
 
     if dry_run:
         return _dry_run_report(run_id, db_path=db_path, budget=budget, circuit_breaker=circuit_breaker,
-                                story_id=story_id)
+                                story_id=story_id, memory_sources=memory_sources)
 
     api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -1168,7 +1208,8 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
             target_candidate_story = _require_known_story_id(known_candidate_stories, story_id)
             conn = store.get_connection(db_path)
             try:
-                reuse_state = _resolve_story_reuse_state(run_id, target_candidate_story, conn=conn)
+                reuse_state = _resolve_story_reuse_state(run_id, target_candidate_story, conn=conn,
+                                                         memory_sources=memory_sources, corpus=corpus)
             finally:
                 conn.close()
             targeted_new_call_cap = reuse_state["new_calls_needed"]
@@ -1185,7 +1226,7 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
     outcome = orch.run_intelligence_cycle(
         run_id, corpus, reporting_period, api_key=api_key, db_path=db_path,
         budget=effective_budget, circuit_breaker=effective_circuit_breaker,
-        call_corpus_analyst=call_corpus_analyst_final,
+        call_corpus_analyst=call_corpus_analyst_final, memory_sources=memory_sources,
     )
     finished_at = datetime.now(timezone.utc).isoformat()
 
@@ -1274,7 +1315,17 @@ def main():
                               "Corpus Analyst output is already known (e.g. via "
                               "--corpus-analysis-artifact). Never an implicit fallback -- omitted, "
                               "behavior is unchanged.")
+    parser.add_argument("--memory-db", action="append", default=[],
+                         help="path to a PRIOR intelligence store to consult (read-only) for reusable, "
+                              "valid, fingerprint-matching Evidence Analyst / Pass #2 artifacts before "
+                              "making a new call. Repeatable; paired by position with --memory-run-id; "
+                              "searched in the order given, after the current run. Never modified.")
+    parser.add_argument("--memory-run-id", action="append", default=[],
+                         help="run_id inside the matching --memory-db. Repeatable.")
     args = parser.parse_args()
+    if len(args.memory_db) != len(args.memory_run_id):
+        parser.error("--memory-db and --memory-run-id must be supplied the same number of times")
+    memory_sources = list(zip(args.memory_db, args.memory_run_id)) or None
 
     reporting_period = None
     if args.reporting_period_start or args.reporting_period_end:
@@ -1296,7 +1347,7 @@ def main():
         db_path=args.db_path, budget=budget, circuit_breaker=circuit_breaker, dry_run=args.dry_run,
         corpus_analysis_artifact_path=args.corpus_analysis_artifact,
         evidence_analysis_artifact_path=args.evidence_analysis_artifact,
-        story_id=args.story_id,
+        story_id=args.story_id, memory_sources=memory_sources,
     )
 
 
