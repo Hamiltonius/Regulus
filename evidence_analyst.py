@@ -424,12 +424,26 @@ def _extract_json_text(content_blocks):
 
 
 class EvidenceAnalystJSONDecodeError(ValueError):
-    """Raised by call_anthropic_evidence_analyst when the extracted text is
-    not valid JSON. Mirrors dd_pipeline.Stage2JSONDecodeError / corpus_
-    analyst.CorpusAnalystJSONDecodeError exactly -- DIAGNOSTIC-ONLY,
-    str(this) is IDENTICAL to str() of the underlying json.JSONDecodeError.
-    Response-side only; never carries the API key or any request header.
+    """Raised by call_anthropic_evidence_analyst when the MODEL'S OWN
+    extracted answer text is not valid JSON (the HTTP response envelope
+    itself parsed fine -- resp.json() succeeded; it's the model's text
+    content, after _extract_json_text(), that doesn't parse). Mirrors
+    dd_pipeline.Stage2JSONDecodeError / corpus_analyst.
+    CorpusAnalystJSONDecodeError exactly -- DIAGNOSTIC-ONLY, str(this) is
+    IDENTICAL to str() of the underlying json.JSONDecodeError. Response-
+    side only; never carries the API key or any request header.
+
+    error_category (class attribute, read via getattr by callers that
+    don't import this module) distinguishes this from
+    EvidenceAnalystAPIResponseJSONDecodeError below -- both exception
+    types raise with byte-identical str() text when the underlying
+    json.JSONDecodeError message happens to match (e.g. an empty string
+    at either decode point produces the same "Expecting value: line 1
+    column 1 (char 0)"), so the message ALONE never distinguishes them;
+    this attribute (and the different fields each class carries) does.
     """
+
+    error_category = "model_output_json_decode_error"
 
     def __init__(self, json_error: json.JSONDecodeError, *, raw_text: str,
                  content_blocks: list, response_meta: dict):
@@ -437,6 +451,51 @@ class EvidenceAnalystJSONDecodeError(ValueError):
         self.raw_text = raw_text
         self.content_blocks = content_blocks
         self.response_meta = response_meta
+
+
+_RESPONSE_BODY_PREVIEW_MAX_CHARS = 500
+
+
+def _sanitized_body_preview(body_text: Optional[str], *, max_chars: int = _RESPONSE_BODY_PREVIEW_MAX_CHARS) -> Optional[str]:
+    """Bound a raw HTTP response BODY (never request headers, never the
+    api_key) to a fixed length for diagnostics. Truncation is marked
+    explicitly so a preview is never mistaken for the complete body."""
+    if body_text is None:
+        return None
+    if len(body_text) <= max_chars:
+        return body_text
+    return body_text[:max_chars] + f"... [truncated, {len(body_text)} chars total]"
+
+
+class EvidenceAnalystAPIResponseJSONDecodeError(ValueError):
+    """Raised by call_anthropic_evidence_analyst when resp.json() itself
+    fails -- the HTTP response ENVELOPE was not valid JSON (distinct from
+    EvidenceAnalystJSONDecodeError above, where the envelope parses fine
+    but the model's own answer text inside it doesn't). This is the
+    "api_response_json_decode_error" category: it means something
+    between the client and the Anthropic API returned a non-JSON (often
+    empty) body on an HTTP status that did not itself raise via
+    resp.raise_for_status() (a 2xx with an unparseable/empty body, or a
+    non-2xx whose body also happened not to be JSON -- status_code below
+    disambiguates which).
+
+    Carries HTTP status_code, content_type, body_length (bytes), and a
+    bounded/sanitized body_preview (see _sanitized_body_preview) for
+    diagnostics -- enough to tell a truncated/empty response apart from
+    an HTML error page, without ever persisting request headers, the
+    api_key, or any credential. Response-side only, exactly like
+    EvidenceAnalystJSONDecodeError.
+    """
+
+    error_category = "api_response_json_decode_error"
+
+    def __init__(self, json_error: json.JSONDecodeError, *, status_code: Optional[int],
+                 content_type: Optional[str], body_length: Optional[int], body_preview: Optional[str]):
+        super().__init__(str(json_error))
+        self.status_code = status_code
+        self.content_type = content_type
+        self.body_length = body_length
+        self.body_preview = body_preview
 
 
 def _build_evidence_analyst_user_payload(candidate_story: dict,
@@ -466,10 +525,17 @@ def call_anthropic_evidence_analyst(candidate_story: dict,
 
     Returns (parsed_json, raw_text, response_meta) on success, mirroring
     corpus_analyst.call_anthropic_corpus_analyst's return shape exactly.
-    Raises EvidenceAnalystJSONDecodeError (carrying raw_text/content_blocks/
-    response_meta) on a JSON parse failure; any other exception (network
-    error, HTTP error, timeout) propagates as-is. Never persists or logs
-    the API key -- it is used only in the one outbound request header.
+    Raises EvidenceAnalystAPIResponseJSONDecodeError if the HTTP response
+    ENVELOPE itself is not valid JSON (resp.json() failure -- status_code/
+    content_type/body_length/body_preview captured BEFORE the decode
+    attempt, so this failure mode is never silently indistinguishable
+    from "no response received at all"), or EvidenceAnalystJSONDecodeError
+    (carrying raw_text/content_blocks/response_meta) if the envelope
+    parses fine but the MODEL'S own extracted answer text does not. Any
+    other exception (network error, HTTP error, timeout) propagates
+    as-is. Never persists or logs the API key, any request header, or
+    the full response body -- only a length-bounded body preview, and
+    only of the response, never the request.
     """
     payload = _build_evidence_analyst_user_payload(candidate_story, retrieval_bundle, corpus)
 
@@ -494,7 +560,25 @@ def call_anthropic_evidence_analyst(candidate_story: dict,
         timeout=EVIDENCE_ANALYST_TIMEOUT_SECONDS,
     )
     resp.raise_for_status()
-    response_json = resp.json()
+
+    # Capture response-envelope diagnostics BEFORE attempting to decode it
+    # as JSON, so a decode failure here is never left with nothing but a
+    # bare "Expecting value..." message -- status/content-type/body
+    # length/a bounded body preview are always available for the
+    # EvidenceAnalystAPIResponseJSONDecodeError raised below, should
+    # resp.json() fail. Never captures request headers or the api_key.
+    status_code = resp.status_code
+    content_type = resp.headers.get("content-type")
+    body_length = len(resp.content) if resp.content is not None else None
+
+    try:
+        response_json = resp.json()
+    except json.JSONDecodeError as e:
+        raise EvidenceAnalystAPIResponseJSONDecodeError(
+            e, status_code=status_code, content_type=content_type, body_length=body_length,
+            body_preview=_sanitized_body_preview(resp.text),
+        ) from e
+
     content = response_json["content"]
     text = _extract_json_text(content)
 
@@ -533,6 +617,23 @@ class EvidenceAnalystAttemptDiagnostics:
     other credential material -- only the configured model/max_tokens/
     timeout (public constants) and the model's own response content/
     metadata.
+
+    error_category distinguishes WHICH of three failure shapes this
+    attempt hit (set only when request_succeeded/parse_succeeded indicate
+    a failure): "model_output_json_decode_error" (the HTTP response
+    envelope parsed fine, but the model's own extracted text did not --
+    see EvidenceAnalystJSONDecodeError), "api_response_json_decode_error"
+    (the envelope itself did not parse as JSON -- see
+    EvidenceAnalystAPIResponseJSONDecodeError; http_status_code/
+    http_content_type/http_body_length/http_body_preview are populated
+    only in this case), "transport_error" (no response was received at
+    all -- network/timeout/connection failure), or a caller-supplied
+    category string (e.g. "budget_exhausted", read via the same
+    getattr(e, "error_category", None) convention from any exception a
+    wrapping caller raises -- this module does not need to know about
+    such callers by name). This additive field never changes the
+    pre-existing request_succeeded/parse_succeeded/transport_error/
+    parse_error semantics -- it is a classification on top of them.
     """
     attempt_number: int
     model: str
@@ -550,6 +651,11 @@ class EvidenceAnalystAttemptDiagnostics:
     validation_succeeded: Optional[bool] = None
     validation_errors: list = field(default_factory=list)
     transport_error: Optional[str] = None
+    error_category: Optional[str] = None
+    http_status_code: Optional[int] = None
+    http_content_type: Optional[str] = None
+    http_body_length: Optional[int] = None
+    http_body_preview: Optional[str] = None
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
     duration_seconds: Optional[float] = None
@@ -572,6 +678,11 @@ class EvidenceAnalystAttemptDiagnostics:
             "validation_succeeded": self.validation_succeeded,
             "validation_errors": self.validation_errors,
             "transport_error": self.transport_error,
+            "error_category": self.error_category,
+            "http_status_code": self.http_status_code,
+            "http_content_type": self.http_content_type,
+            "http_body_length": self.http_body_length,
+            "http_body_preview": self.http_body_preview,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "duration_seconds": self.duration_seconds,
@@ -613,18 +724,52 @@ def _run_single_live_attempt(attempt_number: int, candidate_story: dict,
         result = caller(candidate_story, retrieval_bundle, corpus, api_key)
     except Exception as e:  # network error, HTTP error, JSON parse error, stub failure
         _finish()
+        error_category = getattr(e, "error_category", None)
         raw_text = getattr(e, "raw_text", None)
         response_meta = getattr(e, "response_meta", None)
-        if raw_text is not None or response_meta is not None:
+        status_code = getattr(e, "status_code", None)
+        content_type = getattr(e, "content_type", None)
+        body_length = getattr(e, "body_length", None)
+        body_preview = getattr(e, "body_preview", None)
+
+        if error_category == "model_output_json_decode_error" or (
+            error_category is None and (raw_text is not None or response_meta is not None)
+        ):
+            # The HTTP response envelope parsed fine; the model's own
+            # extracted answer text did not (EvidenceAnalystJSONDecodeError).
             diag.request_succeeded = True
             diag.raw_text = raw_text
             diag.raw_text_length = len(raw_text) if raw_text is not None else None
             diag.parse_succeeded = False
             diag.parse_error = str(e)
+            diag.error_category = error_category or "model_output_json_decode_error"
             _apply_response_meta(response_meta)
+        elif error_category == "api_response_json_decode_error" or (
+            error_category is None and status_code is not None
+        ):
+            # The HTTP response envelope itself did not parse as JSON
+            # (EvidenceAnalystAPIResponseJSONDecodeError) -- a response
+            # WAS received (hence request_succeeded=True), just not a
+            # decodable one. Distinct from both the case above and from
+            # "no response at all" below.
+            diag.request_succeeded = True
+            diag.parse_succeeded = False
+            diag.parse_error = str(e)
+            diag.error_category = error_category or "api_response_json_decode_error"
+            diag.http_status_code = status_code
+            diag.http_content_type = content_type
+            diag.http_body_length = body_length
+            diag.http_body_preview = body_preview
         else:
+            # No response body was ever available -- a transport/API-level
+            # failure (network error, timeout, a legacy stub that simply
+            # raises), OR a caller-supplied exception (e.g. a run-budget
+            # guard) that made no request at all. error_category, when
+            # the exception supplied one, still records WHICH such
+            # failure this was without implying a response was received.
             diag.request_succeeded = False
             diag.transport_error = str(e)
+            diag.error_category = error_category or "transport_error"
         return None, diag, e
 
     _finish()

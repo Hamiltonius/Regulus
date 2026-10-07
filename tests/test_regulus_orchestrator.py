@@ -463,6 +463,246 @@ check("H1. reconstruct_editor_inputs independently rebuilds the same set of elig
       {e["story_id"] for e in reconstructed} == set(TWO_STORY_IDS))
 
 # ===========================================================================
+# J. Run-level budget: checked BEFORE a request is initiated; exhaustion
+# stops further requests entirely (fail closed) rather than silently
+# continuing to spend, and remaining stories are excluded without any
+# stage call being attempted for them at all.
+# ===========================================================================
+db_path = _fresh_db_path("j.db")
+_evidence_calls_j = {"n": 0}
+
+
+def _evidence_call_counting(candidate_story, retrieval_bundle, corpus, api_key):
+    _evidence_calls_j["n"] += 1
+    return _valid_evidence_output(candidate_story, retrieval_bundle, corpus, api_key)
+
+
+budget_j = orch.RunBudget(max_evidence_analyst_calls=1)
+outcome = orch.run_intelligence_cycle(
+    "run-j", DEV_CORPUS, REPORTING_PERIOD, api_key="fake-key-not-real", db_path=db_path,
+    call_corpus_analyst=_corpus_analyst_stub_subset(THREE_STORY_IDS),
+    call_evidence_analyst=_evidence_call_counting, retrieve=_fake_retrieve,
+    call_pass2=_pass2_call_stub, call_editor=_editor_call_stub,
+    budget=budget_j,
+)
+check("J1. only ONE Evidence Analyst call is actually made before the budget trips "
+      "(max_evidence_analyst_calls=1 enforced BEFORE the request, not after -- the second "
+      "story's own retry loop re-checks the budget on every attempt but makes zero further "
+      "requests, and the third story is skipped without ever reaching the stage at all)",
+      _evidence_calls_j["n"] == 1, f"actual calls={_evidence_calls_j['n']}")
+check("J2. the first story is still processed normally (included)", outcome.stories[0].included)
+check("J2b. the second story's Evidence Analyst call is blocked before any request and the "
+      "story is excluded via the stage's own failure reporting (evidence_analyst_call_failed), "
+      "never silently treated as included",
+      not outcome.stories[1].included
+      and outcome.stories[1].evidence_failure_reason == "evidence_analyst_call_failed")
+check("J3. the third story is skipped entirely once the run is already known to be budget-"
+      "exhausted -- exclusion_reason='run_budget_exhausted', with NO stage call attempted "
+      "for it at all (not even a blocked one)",
+      outcome.stories[2].exclusion_reason == "run_budget_exhausted")
+check("J4. the Editor is skipped once the budget has tripped (fail closed covers the Editor too)",
+      outcome.brief_outcome is None and outcome.brief_skipped_reason == "run_budget_exhausted")
+check("J5. OrchestrationOutcome.budget_exhausted_reason reports the tripped limit",
+      outcome.budget_exhausted_reason == "max_evidence_analyst_calls")
+check("J6. OrchestrationOutcome.budget_summary reflects exactly 1 evidence_analyst_calls_made",
+      outcome.budget_summary is not None and outcome.budget_summary["evidence_analyst_calls_made"] == 1,
+      str(outcome.budget_summary))
+
+# Per-story attempt cap: max_evidence_attempts_per_story=0 blocks the very
+# first call for every story, so zero real calls are ever made.
+db_path = _fresh_db_path("j2.db")
+_evidence_calls_j2 = {"n": 0}
+
+
+def _evidence_call_counting_j2(candidate_story, retrieval_bundle, corpus, api_key):
+    _evidence_calls_j2["n"] += 1
+    return _valid_evidence_output(candidate_story, retrieval_bundle, corpus, api_key)
+
+
+# max_total_llm_calls=1 is consumed entirely by the (budget-wrapped)
+# Corpus Analyst call itself, so EVERY Evidence Analyst call for every
+# story is blocked before any request is made.
+budget_j2 = orch.RunBudget(max_total_llm_calls=1)
+outcome = orch.run_intelligence_cycle(
+    "run-j2", DEV_CORPUS, REPORTING_PERIOD, api_key="fake-key-not-real", db_path=db_path,
+    call_corpus_analyst=_corpus_analyst_stub_subset(THREE_STORY_IDS),
+    call_evidence_analyst=_evidence_call_counting_j2, retrieve=_fake_retrieve,
+    call_pass2=_pass2_call_stub, call_editor=_editor_call_stub,
+    budget=budget_j2,
+)
+check("J7. max_total_llm_calls=1 (consumed by the budget-wrapped Corpus Analyst call itself) "
+      "blocks every single Evidence Analyst call across all stories "
+      "(budget accounting happens before ANY request, including the first)",
+      _evidence_calls_j2["n"] == 0)
+check("J8. the first story's own call is blocked before any request and excluded via the "
+      "stage's own failure reporting; the two stories after it are skipped entirely with "
+      "exclusion_reason='run_budget_exhausted'",
+      outcome.stories[0].evidence_failure_reason == "evidence_analyst_call_failed"
+      and all(s.exclusion_reason == "run_budget_exhausted" for s in outcome.stories[1:]))
+check("J9. budget_exhausted_reason is 'max_total_llm_calls'",
+      outcome.budget_exhausted_reason == "max_total_llm_calls")
+
+# ===========================================================================
+# K. Resume / reuse: a VALID, fingerprint-matching artifact persisted
+# under the SAME run_id is reused with NO model call; an INVALID artifact,
+# or one whose fingerprint does not match the current input, is never
+# reused and falls through to a real call.
+# ===========================================================================
+db_path = _fresh_db_path("k.db")
+
+# First pass: a normal run persists valid Evidence + Pass #2 artifacts.
+outcome_first = orch.run_intelligence_cycle(
+    "run-k", DEV_CORPUS, REPORTING_PERIOD, api_key="fake-key-not-real", db_path=db_path,
+    call_corpus_analyst=_corpus_analyst_stub_subset(TWO_STORY_IDS),
+    call_evidence_analyst=_evidence_call_stub, retrieve=_fake_retrieve,
+    call_pass2=_pass2_call_stub, call_editor=_editor_call_stub,
+)
+check("K1. first pass over run-k succeeds normally (sets up state to reuse)",
+      outcome_first.brief_outcome is not None and outcome_first.brief_outcome.is_valid)
+
+
+def _evidence_call_must_not_be_called(candidate_story, retrieval_bundle, corpus, api_key):
+    raise AssertionError("Evidence Analyst must not be called -- a valid reusable artifact exists")
+
+
+def _pass2_call_must_not_be_called(story_id, original_story, evidence_package, api_key):
+    raise AssertionError("Pass #2 must not be called -- a valid reusable artifact exists")
+
+
+# Second pass: SAME run_id, SAME candidate stories (so fingerprints match) --
+# both stages must be reused and NEITHER stub above may ever be invoked.
+outcome_second = orch.run_intelligence_cycle(
+    "run-k", DEV_CORPUS, REPORTING_PERIOD, api_key="fake-key-not-real", db_path=db_path,
+    call_corpus_analyst=_corpus_analyst_stub_subset(TWO_STORY_IDS),
+    call_evidence_analyst=_evidence_call_must_not_be_called, retrieve=_fake_retrieve,
+    call_pass2=_pass2_call_must_not_be_called, call_editor=_editor_call_stub,
+)
+check("K2. second pass over the SAME run_id/stories reuses both stages for both stories "
+      "(evidence_reused and pass2_reused are both True, and no AssertionError was raised)",
+      all(s.evidence_reused and s.pass2_reused for s in outcome_second.stories),
+      str([(s.story_id, s.evidence_reused, s.pass2_reused) for s in outcome_second.stories]))
+check("K3. the reused run still produces a valid Brief", outcome_second.brief_outcome is not None
+      and outcome_second.brief_outcome.is_valid)
+
+# An INVALID persisted artifact is never reused, even under the same run_id/story.
+db_path = _fresh_db_path("k2.db")
+conn_k2 = store.get_connection(db_path)
+story_k2 = get_story(ACCEPTANCE_3, ONE_STORY_ID)
+store.save_story_artifact("run-k2", ONE_STORY_ID, "corpus_analyst", story_k2, is_valid=True, conn=conn_k2)
+store.save_story_artifact("run-k2", ONE_STORY_ID, "evidence_analyst", {"story_id": ONE_STORY_ID},
+                           is_valid=False, failure_reason="simulated_prior_failure", conn=conn_k2)
+conn_k2.close()
+_evidence_calls_k2 = {"n": 0}
+
+
+def _evidence_call_counting_k2(candidate_story, retrieval_bundle, corpus, api_key):
+    _evidence_calls_k2["n"] += 1
+    return _valid_evidence_output(candidate_story, retrieval_bundle, corpus, api_key)
+
+
+outcome = orch.run_intelligence_cycle(
+    "run-k2", DEV_CORPUS, REPORTING_PERIOD, api_key="fake-key-not-real", db_path=db_path,
+    call_corpus_analyst=_corpus_analyst_stub_subset([ONE_STORY_ID]),
+    call_evidence_analyst=_evidence_call_counting_k2, retrieve=_fake_retrieve,
+    call_pass2=_pass2_call_stub, call_editor=_editor_call_stub,
+)
+check("K4. a previously INVALID Evidence Analyst artifact is never reused -- a real call is made",
+      _evidence_calls_k2["n"] == 1 and outcome.stories[0].evidence_reused is False)
+
+# A VALID artifact whose fingerprint does NOT match the current input is
+# never reused either (simulates the underlying story content changing).
+db_path = _fresh_db_path("k3.db")
+conn_k3 = store.get_connection(db_path)
+story_k3 = get_story(ACCEPTANCE_3, ONE_STORY_ID)
+store.save_story_artifact("run-k3", ONE_STORY_ID, "corpus_analyst", story_k3, is_valid=True, conn=conn_k3)
+store.save_story_artifact("run-k3", ONE_STORY_ID, "evidence_analyst",
+                           _valid_evidence_output(story_k3, None, None),
+                           is_valid=True, input_fingerprint="deliberately-wrong-fingerprint", conn=conn_k3)
+conn_k3.close()
+_evidence_calls_k3 = {"n": 0}
+
+
+def _evidence_call_counting_k3(candidate_story, retrieval_bundle, corpus, api_key):
+    _evidence_calls_k3["n"] += 1
+    return _valid_evidence_output(candidate_story, retrieval_bundle, corpus, api_key)
+
+
+outcome = orch.run_intelligence_cycle(
+    "run-k3", DEV_CORPUS, REPORTING_PERIOD, api_key="fake-key-not-real", db_path=db_path,
+    call_corpus_analyst=_corpus_analyst_stub_subset([ONE_STORY_ID]),
+    call_evidence_analyst=_evidence_call_counting_k3, retrieve=_fake_retrieve,
+    call_pass2=_pass2_call_stub, call_editor=_editor_call_stub,
+)
+check("K5. a VALID artifact with a MISMATCHED input fingerprint is never reused -- a real call is made",
+      _evidence_calls_k3["n"] == 1 and outcome.stories[0].evidence_reused is False)
+
+# ===========================================================================
+# L. Failure circuit breaker: the SAME Evidence Analyst failure class
+# recurring across consecutive_failure_threshold (default 2) different
+# stories stops ALL further Evidence Analyst calls for the rest of the run.
+# ===========================================================================
+db_path = _fresh_db_path("l.db")
+_evidence_calls_l = {"n": 0}
+
+
+def _evidence_call_always_transport_error(candidate_story, retrieval_bundle, corpus, api_key):
+    _evidence_calls_l["n"] += 1
+    raise ConnectionError("simulated systemic transport failure")  # -> error_category="transport_error"
+
+
+circuit_breaker_l = orch.CircuitBreaker(consecutive_failure_threshold=2)
+outcome = orch.run_intelligence_cycle(
+    "run-l", DEV_CORPUS, REPORTING_PERIOD, api_key="fake-key-not-real", db_path=db_path,
+    call_corpus_analyst=_corpus_analyst_stub_subset(THREE_STORY_IDS),
+    call_evidence_analyst=_evidence_call_always_transport_error, retrieve=_fake_retrieve,
+    call_pass2=_pass2_call_stub, call_editor=_editor_call_stub,
+    circuit_breaker=circuit_breaker_l,
+)
+check("L1. the breaker trips after the first two stories each exhaust their own 2 internal "
+      "retry attempts with the SAME failure class (2 stories x 2 attempts = 4 real calls), "
+      "then makes ZERO further Evidence Analyst calls for the third story",
+      _evidence_calls_l["n"] == 4, f"actual calls={_evidence_calls_l['n']}")
+check("L2. the third story is excluded with exclusion_reason='circuit_breaker_triggered' "
+      "and no further Evidence Analyst call is attempted for it (skipped before "
+      "_process_one_story is even invoked for it)",
+      outcome.stories[2].exclusion_reason == "circuit_breaker_triggered")
+check("L3. OrchestrationOutcome.circuit_breaker reports circuit_breaker_triggered=True "
+      "with the correct failure_class and affected story ids",
+      outcome.circuit_breaker is not None
+      and outcome.circuit_breaker["circuit_breaker_triggered"] is True
+      and outcome.circuit_breaker["failure_class"] == "transport_error"
+      and outcome.circuit_breaker["affected_story_ids"] == THREE_STORY_IDS[:2],
+      str(outcome.circuit_breaker))
+check("L4. the Editor is skipped once the breaker has tripped",
+      outcome.brief_outcome is None and outcome.brief_skipped_reason == "circuit_breaker_triggered")
+
+# A single Evidence Analyst SUCCESS resets the breaker's streak -- an
+# isolated failure followed by a success followed by another isolated
+# failure of the SAME class must NOT trip the breaker (no two CONSECUTIVE
+# failures of the same class).
+db_path = _fresh_db_path("l2.db")
+
+
+def _evidence_call_fail_ok_fail(candidate_story, retrieval_bundle, corpus, api_key):
+    sid = candidate_story["story_id"]
+    if sid == THREE_STORY_IDS[1]:
+        return _valid_evidence_output(candidate_story, retrieval_bundle, corpus, api_key)
+    raise ConnectionError("simulated isolated transport failure")
+
+
+circuit_breaker_l2 = orch.CircuitBreaker(consecutive_failure_threshold=2)
+outcome = orch.run_intelligence_cycle(
+    "run-l2", DEV_CORPUS, REPORTING_PERIOD, api_key="fake-key-not-real", db_path=db_path,
+    call_corpus_analyst=_corpus_analyst_stub_subset(THREE_STORY_IDS),
+    call_evidence_analyst=_evidence_call_fail_ok_fail, retrieve=_fake_retrieve,
+    call_pass2=_pass2_call_stub, call_editor=_editor_call_stub,
+    circuit_breaker=circuit_breaker_l2,
+)
+check("L5. a success between two isolated same-class failures resets the streak -- "
+      "the breaker never trips, and all three stories are still processed",
+      circuit_breaker_l2.triggered is False and len(outcome.stories) == 3)
+
+# ===========================================================================
 # I. Isolation / no real network call anywhere in this file
 # ===========================================================================
 check("I1. no real network POST was attempted anywhere in this test file",

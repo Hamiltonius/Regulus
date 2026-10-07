@@ -63,6 +63,11 @@ import os
 from datetime import datetime, timezone
 
 from corpus_extractor import Corpus, CorpusObservation
+import corpus_analyst
+import evidence_analyst
+import intelligence_analyst_pass2 as pass2
+import intelligence_editor as editor
+import intelligence_store as store
 import regulus_orchestrator as orch
 
 FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests", "fixtures")
@@ -70,6 +75,30 @@ CORPUS_FIXTURE_PATH = os.path.join(FIXTURES_DIR, "corpus_acceptance_3.json")
 
 DEFAULT_RUN_ID = "brief001-acceptance-1"
 DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "brief_acceptance_runs")
+
+# ---------------------------------------------------------------------------
+# CONSERVATIVE ACCEPTANCE BUDGET DEFAULTS -- added per the reliability/cost-
+# control patch (see regulus_orchestrator.RunBudget / CircuitBreaker
+# docstrings for exact semantics). These are deliberately TIGHT, not
+# generous: by default this script cannot complete a full, fully-healthy
+# Acceptance #3 run (11 candidate stories) in one invocation -- it will
+# hit max_total_llm_calls=4 after roughly one story's worth of calls and
+# fail closed (run_budget_exhausted), persisting whatever it got and
+# stopping. This is intentional: these are ACCEPTANCE defaults for
+# controlled, incremental, human-supervised runs after the live incident
+# this patch responds to (an uncontrolled run silently burned ~$5 before
+# it was manually aborted) -- not a throughput setting and not a global
+# production limit (regulus_orchestrator.run_intelligence_cycle's own
+# default remains unlimited; nothing here changes that). A full run is
+# expected to require either several resumed invocations against the
+# SAME --db-path (each one picking up where the last left off via the
+# resume/reuse mechanism) or an explicit, wider budget passed via CLI
+# flags. Nothing here silently raises the ceiling.
+# ---------------------------------------------------------------------------
+DEFAULT_MAX_TOTAL_LLM_CALLS = 4
+DEFAULT_MAX_EVIDENCE_ANALYST_CALLS = 1
+DEFAULT_MAX_EVIDENCE_ATTEMPTS_PER_STORY = 1
+DEFAULT_CIRCUIT_BREAKER_THRESHOLD = 2
 
 
 def load_golden_corpus(path: str = CORPUS_FIXTURE_PATH) -> Corpus:
@@ -121,9 +150,12 @@ def _outcome_to_diagnostic_dict(run_id: str, outcome: orch.OrchestrationOutcome,
                 "exclusion_reason": s.exclusion_reason,
                 "evidence_is_valid": s.evidence_is_valid,
                 "evidence_failure_reason": s.evidence_failure_reason,
+                "evidence_error_category": s.evidence_error_category,
+                "evidence_reused": s.evidence_reused,
                 "pass2_is_valid": s.pass2_is_valid,
                 "pass2_failure_reason": s.pass2_failure_reason,
                 "pass2_editor_eligibility": s.pass2_editor_eligibility,
+                "pass2_reused": s.pass2_reused,
                 "exception": s.exception,
             }
             for s in outcome.stories
@@ -131,6 +163,9 @@ def _outcome_to_diagnostic_dict(run_id: str, outcome: orch.OrchestrationOutcome,
         "editor_inputs_count": outcome.editor_inputs_count,
         "brief_id": outcome.brief_id,
         "brief_skipped_reason": outcome.brief_skipped_reason,
+        "budget_exhausted_reason": outcome.budget_exhausted_reason,
+        "budget_summary": outcome.budget_summary,
+        "circuit_breaker": outcome.circuit_breaker,
         "brief_outcome": (
             {
                 "is_valid": outcome.brief_outcome.is_valid,
@@ -157,6 +192,11 @@ def _print_summary(outcome: orch.OrchestrationOutcome, out_path: str) -> None:
             print(f"    - {s.story_id} excluded: {s.exclusion_reason}")
     print(f"  editor_inputs_count      : {outcome.editor_inputs_count}")
     print(f"  brief_skipped_reason     : {outcome.brief_skipped_reason}")
+    print(f"  budget_exhausted_reason  : {outcome.budget_exhausted_reason}")
+    if outcome.budget_summary is not None:
+        print(f"  budget_summary           : {outcome.budget_summary}")
+    if outcome.circuit_breaker is not None:
+        print(f"  circuit_breaker          : {outcome.circuit_breaker}")
     if outcome.brief_outcome is not None:
         print(f"  brief_id                 : {outcome.brief_id}")
         print(f"  brief validation_status  : {outcome.brief_outcome.validation_status}")
@@ -164,20 +204,183 @@ def _print_summary(outcome: orch.OrchestrationOutcome, out_path: str) -> None:
     print(f"  diagnostic artifact      : {out_path}")
 
 
+def _print_budget_plan(budget: orch.RunBudget, circuit_breaker: orch.CircuitBreaker, *, db_path: str) -> None:
+    """Print the configured call budget BEFORE any execution (live or
+    dry-run) -- required so a human watching stdout can abort before any
+    request is made if the configured budget looks wrong."""
+    print("Regulus Intelligence Brief #001 acceptance -- configured run budget (enforced BEFORE "
+          "each request is initiated, not after):")
+    print(f"  max_total_llm_calls              : {budget.max_total_llm_calls}")
+    print(f"  max_evidence_analyst_calls        : {budget.max_evidence_analyst_calls}")
+    print(f"  max_evidence_attempts_per_story    : {budget.max_evidence_attempts_per_story}")
+    print(f"  circuit_breaker_consecutive_threshold: {circuit_breaker.consecutive_failure_threshold}")
+    print(f"  intelligence_store_db_path        : {db_path}")
+
+
+def _dry_run_report(run_id: str, *, db_path: str, budget: orch.RunBudget,
+                     circuit_breaker: orch.CircuitBreaker) -> dict:
+    """Report what a real run WOULD do, making ZERO API requests.
+
+    Loads the corpus (a local, read-only fixture load -- not a model
+    call) and checks intelligence_store for any already-persisted,
+    reusable state for this exact run_id at this exact db_path (only
+    present if --db-path points at a db file from a PRIOR run of this
+    same run_id -- the default fresh-timestamped db_path never has any).
+
+    If no persisted Corpus Analyst output exists for this run_id, the
+    candidate stories are genuinely unknown without a live call -- this
+    function does not guess or fabricate them; it reports that plainly
+    along with the worst-case call volume bound by the configured
+    EVIDENCE_ANALYST/PASS2/EDITOR_MAX_ATTEMPTS constants and the budget.
+    """
+    print(f"\n[DRY RUN] run_id={run_id!r} -- no API request will be made.")
+    _print_budget_plan(budget, circuit_breaker, db_path=db_path)
+
+    corpus, _ = load_golden_corpus()  # local fixture load only -- no API call
+
+    conn = None
+    persisted_corpus_artifacts = []
+    if os.path.exists(db_path):
+        conn = store.get_connection(db_path)
+        persisted_corpus_artifacts = store.list_story_artifacts(run_id, stage="corpus_analyst", conn=conn)
+
+    report: dict = {
+        "run_id": run_id,
+        "db_path": db_path,
+        "db_path_exists": os.path.exists(db_path),
+        "budget": budget.summary(),
+        "circuit_breaker_consecutive_threshold": circuit_breaker.consecutive_failure_threshold,
+        "corpus_analyst": None,
+        "stories": [],
+        "would_call_editor": None,
+        "max_possible_calls_worst_case": None,
+        "max_possible_calls_budget_ceiling": budget.max_total_llm_calls,
+    }
+
+    if not persisted_corpus_artifacts:
+        print("  corpus_analyst   : no persisted output found for this run_id at this db_path -- "
+              "candidate stories are unknown without a live call.")
+        report["corpus_analyst"] = {
+            "resolved": False,
+            "note": "no persisted artifact -- a real run would call Corpus Analyst Pass #1 "
+                    f"(up to {corpus_analyst.CORPUS_ANALYST_MAX_ATTEMPTS} attempts) before anything "
+                    "else is knowable",
+        }
+        # Worst case with zero prior state: Corpus Analyst's own attempts,
+        # plus nothing else is computable yet (candidate_stories unknown).
+        report["max_possible_calls_worst_case"] = corpus_analyst.CORPUS_ANALYST_MAX_ATTEMPTS
+        print(f"  max possible calls (worst case, corpus unresolved): "
+              f"{report['max_possible_calls_worst_case']} (Corpus Analyst attempts only -- "
+              f"nothing further is knowable before that call)")
+        if conn is not None:
+            conn.close()
+        return report
+
+    # A persisted corpus_analyst artifact exists -- use its candidate
+    # stories (exactly as the real run would via intelligence_store) to
+    # report per-story reuse eligibility, with zero model calls.
+    candidate_stories = [rec.payload for rec in persisted_corpus_artifacts if rec.is_valid]
+    report["corpus_analyst"] = {"resolved": True, "candidate_story_count": len(candidate_stories)}
+    print(f"  corpus_analyst   : persisted, valid output found ({len(candidate_stories)} candidate stories)")
+
+    worst_case = 0
+    any_would_call_editor_input = False
+    for candidate_story in candidate_stories:
+        story_id = candidate_story.get("story_id", "UNKNOWN")
+        evidence_fp = store.compute_fingerprint(candidate_story)
+        reusable_evidence = store.find_reusable_story_artifact(
+            run_id, story_id, "evidence_analyst", evidence_fp, conn=conn,
+        )
+        story_report = {"story_id": story_id}
+        if reusable_evidence is not None:
+            story_report["evidence_analyst"] = "would_reuse"
+            evidence_payload = reusable_evidence.payload
+        else:
+            story_report["evidence_analyst"] = "would_call"
+            evidence_payload = None
+            worst_case += evidence_analyst.EVIDENCE_ANALYST_MAX_ATTEMPTS
+
+        if evidence_payload is not None:
+            pass2_fp = store.compute_fingerprint(candidate_story, evidence_payload)
+            reusable_pass2 = store.find_reusable_story_artifact(run_id, story_id, "pass2", pass2_fp, conn=conn)
+            if reusable_pass2 is not None:
+                story_report["pass2"] = "would_reuse"
+                any_would_call_editor_input = True
+            else:
+                story_report["pass2"] = "would_call"
+                worst_case += pass2.PASS2_MAX_ATTEMPTS
+                any_would_call_editor_input = True
+        else:
+            story_report["pass2"] = "unknown_pending_evidence_call"
+            worst_case += pass2.PASS2_MAX_ATTEMPTS  # conservative: assume it would run too
+
+        report["stories"].append(story_report)
+        print(f"    - {story_id}: evidence_analyst={story_report['evidence_analyst']}, "
+              f"pass2={story_report['pass2']}")
+
+    if any_would_call_editor_input:
+        worst_case += editor.EDITOR_MAX_ATTEMPTS
+        report["would_call_editor"] = True
+    else:
+        report["would_call_editor"] = False
+
+    report["max_possible_calls_worst_case"] = worst_case
+    print(f"  max possible calls (worst case, all own-retries exhausted): {worst_case}")
+    if budget.max_total_llm_calls is not None:
+        print(f"  budget ceiling (max_total_llm_calls)                      : {budget.max_total_llm_calls}")
+
+    if conn is not None:
+        conn.close()
+    return report
+
+
 def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
                     reporting_period: dict = None,
                     output_dir: str = DEFAULT_OUTPUT_DIR,
-                    api_key: str = None) -> str:
+                    api_key: str = None,
+                    db_path: str = None,
+                    budget: "orch.RunBudget" = None,
+                    circuit_breaker: "orch.CircuitBreaker" = None,
+                    dry_run: bool = False) -> str:
     """Run one full, LIVE Regulus intelligence cycle over the golden
     Acceptance #3 corpus, persist it to a fresh timestamped SQLite file
-    under output_dir, write a diagnostic JSON artifact, and return the
-    artifact's path.
+    under output_dir (or to `db_path`, when given, enabling resume across
+    runs of the SAME run_id), write a diagnostic JSON artifact, and
+    return the artifact's path.
 
-    Makes MULTIPLE real Anthropic API calls (see module docstring) --
-    this is the live acceptance path, not a test. Never writes to
-    bis_watcher.db / regulus_v3.DB_PATH, never sends email, never re-runs
-    corpus extraction from the production alerts table.
+    `budget` and `circuit_breaker` default to the conservative acceptance
+    defaults (DEFAULT_* constants above) when not supplied -- NOT to
+    unlimited -- so invoking this function (or the CLI) with no extra
+    flags always runs under a bounded budget; raising any limit requires
+    an explicit, separate argument.
+
+    If `dry_run` is True, makes ZERO API requests: prints and returns the
+    dry-run report from _dry_run_report() and does not call
+    run_intelligence_cycle at all.
+
+    Makes MULTIPLE real Anthropic API calls when NOT in dry-run mode (see
+    module docstring) -- this is the live acceptance path, not a test.
+    Never writes to bis_watcher.db / regulus_v3.DB_PATH, never sends
+    email, never re-runs corpus extraction from the production alerts
+    table.
     """
+    budget = budget if budget is not None else orch.RunBudget(
+        max_total_llm_calls=DEFAULT_MAX_TOTAL_LLM_CALLS,
+        max_evidence_analyst_calls=DEFAULT_MAX_EVIDENCE_ANALYST_CALLS,
+        max_evidence_attempts_per_story=DEFAULT_MAX_EVIDENCE_ATTEMPTS_PER_STORY,
+    )
+    circuit_breaker = circuit_breaker if circuit_breaker is not None else orch.CircuitBreaker(
+        consecutive_failure_threshold=DEFAULT_CIRCUIT_BREAKER_THRESHOLD,
+    )
+
+    os.makedirs(output_dir, exist_ok=True)
+    if db_path is None:
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        db_path = os.path.join(output_dir, f"regulus_intelligence_acceptance_{run_id}_{timestamp}.db")
+
+    if dry_run:
+        return _dry_run_report(run_id, db_path=db_path, budget=budget, circuit_breaker=circuit_breaker)
+
     api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError(
@@ -189,16 +392,18 @@ def run_acceptance(run_id: str = DEFAULT_RUN_ID, *,
     corpus, fixture_reporting_period = load_golden_corpus()
     reporting_period = reporting_period or fixture_reporting_period
 
-    os.makedirs(output_dir, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    db_path = os.path.join(output_dir, f"regulus_intelligence_acceptance_{run_id}_{timestamp}.db")
+    _print_budget_plan(budget, circuit_breaker, db_path=db_path)
 
     started_at = datetime.now(timezone.utc).isoformat()
     # Every call_* parameter is left at its default (None) -- each stage
     # uses its OWN real live caller. No stub, no hardcoded expectation.
-    outcome = orch.run_intelligence_cycle(run_id, corpus, reporting_period, api_key=api_key, db_path=db_path)
+    outcome = orch.run_intelligence_cycle(
+        run_id, corpus, reporting_period, api_key=api_key, db_path=db_path,
+        budget=budget, circuit_breaker=circuit_breaker,
+    )
     finished_at = datetime.now(timezone.utc).isoformat()
 
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out_path = os.path.join(output_dir, f"brief001_acceptance_{run_id}_{timestamp}.json")
     diagnostic = _outcome_to_diagnostic_dict(
         run_id, outcome, started_at=started_at, finished_at=finished_at, db_path=db_path,
@@ -222,6 +427,30 @@ def main():
                          help="override the corpus fixture's own reporting_period.end")
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR,
                          help="directory to write the SQLite store and diagnostic JSON artifact into")
+    parser.add_argument("--db-path", default=None,
+                         help="use this SQLite file instead of a fresh timestamped one -- required to "
+                              "actually resume/reuse a PRIOR run of the same --run-id; the default "
+                              "(omitted) always starts a brand-new db file, so resume has nothing to "
+                              "reuse unless this points at the previous run's db file")
+    parser.add_argument("--max-total-llm-calls", type=int, default=DEFAULT_MAX_TOTAL_LLM_CALLS,
+                         help=f"run-level ceiling on total LLM calls initiated, across every stage "
+                              f"(default: {DEFAULT_MAX_TOTAL_LLM_CALLS}, the conservative acceptance "
+                              f"budget -- pass a higher value explicitly to allow more)")
+    parser.add_argument("--max-evidence-analyst-calls", type=int, default=DEFAULT_MAX_EVIDENCE_ANALYST_CALLS,
+                         help=f"ceiling on Evidence Analyst calls across the whole run "
+                              f"(default: {DEFAULT_MAX_EVIDENCE_ANALYST_CALLS})")
+    parser.add_argument("--max-evidence-attempts-per-story", type=int,
+                         default=DEFAULT_MAX_EVIDENCE_ATTEMPTS_PER_STORY,
+                         help=f"ceiling on Evidence Analyst call attempts for any ONE story "
+                              f"(default: {DEFAULT_MAX_EVIDENCE_ATTEMPTS_PER_STORY})")
+    parser.add_argument("--circuit-breaker-threshold", type=int, default=DEFAULT_CIRCUIT_BREAKER_THRESHOLD,
+                         help=f"number of consecutive, identical-failure-class Evidence Analyst "
+                              f"failures across different stories that stops all further Evidence "
+                              f"Analyst calls for the run (default: {DEFAULT_CIRCUIT_BREAKER_THRESHOLD})")
+    parser.add_argument("--dry-run", action="store_true",
+                         help="report what a real run would call or reuse, and the maximum possible "
+                              "call volume under the configured budget -- makes ZERO API requests and "
+                              "does not execute the cycle")
     args = parser.parse_args()
 
     reporting_period = None
@@ -232,7 +461,17 @@ def main():
             "end": args.reporting_period_end or fixture_reporting_period["end"],
         }
 
-    run_acceptance(args.run_id, reporting_period=reporting_period, output_dir=args.output_dir)
+    budget = orch.RunBudget(
+        max_total_llm_calls=args.max_total_llm_calls,
+        max_evidence_analyst_calls=args.max_evidence_analyst_calls,
+        max_evidence_attempts_per_story=args.max_evidence_attempts_per_story,
+    )
+    circuit_breaker = orch.CircuitBreaker(consecutive_failure_threshold=args.circuit_breaker_threshold)
+
+    run_acceptance(
+        args.run_id, reporting_period=reporting_period, output_dir=args.output_dir,
+        db_path=args.db_path, budget=budget, circuit_breaker=circuit_breaker, dry_run=args.dry_run,
+    )
 
 
 if __name__ == "__main__":

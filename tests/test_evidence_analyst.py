@@ -570,6 +570,154 @@ check("O2. EvidenceAnalystAttemptDiagnostics.to_dict() has no api_key/credential
       and "x-api-key" not in outcome.attempts[0].to_dict())
 
 # ===========================================================================
+# Q. Response diagnostics: an HTTP-envelope JSON decode failure
+# (resp.json() itself fails) is distinguishable from a model-output JSON
+# decode failure (json.loads(text) fails) -- both via call_anthropic_
+# evidence_analyst's exception type AND via the error_category the
+# resulting EvidenceAnalystAttemptDiagnostics records, even though both
+# failure modes can produce the exact same str(exception) text (e.g.
+# "Expecting value: line 1 column 1 (char 0)" for an empty body/empty
+# text either way).
+# ===========================================================================
+
+
+class _FakeEmptyBodyResp:
+    """Simulates a 2xx response whose BODY is not valid JSON (e.g. empty)
+    -- resp.json() itself raises, before this module ever reaches
+    response_json["content"]."""
+    status_code = 200
+    content = b""
+    text = ""
+
+    def __init__(self):
+        self.headers = {"content-type": "text/plain"}
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return json.loads(self.text)  # raises json.JSONDecodeError on ""
+
+
+def _post_returns_empty_body(url, headers=None, json=None, timeout=None):
+    return _FakeEmptyBodyResp()
+
+
+def _post_returns_empty_model_text(url, headers=None, json=None, timeout=None):
+    class _FakeResp:
+        status_code = 200
+        content = b'{"content": [], "stop_reason": "end_turn"}'
+        text = '{"content": [], "stop_reason": "end_turn"}'
+        headers = {"content-type": "application/json"}
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"content": [], "stop_reason": "end_turn", "stop_sequence": None,
+                     "model": ea.EVIDENCE_ANALYST_MODEL, "usage": {"input_tokens": 5, "output_tokens": 0}}
+    return _FakeResp()
+
+
+_requests_module.post = _post_returns_empty_body
+try:
+    raised_envelope = None
+    try:
+        ea.call_anthropic_evidence_analyst(CS01_STORY, _fake_retrieve_live(CS01_STORY, DEV_CORPUS), DEV_CORPUS,
+                                            "fake-key-not-real")
+    except ea.EvidenceAnalystAPIResponseJSONDecodeError as e:
+        raised_envelope = e
+finally:
+    _requests_module.post = _guard_requests_post
+
+check("Q1. an HTTP-envelope JSON decode failure raises EvidenceAnalystAPIResponseJSONDecodeError",
+      raised_envelope is not None)
+check("Q2. that exception's error_category is 'api_response_json_decode_error'",
+      raised_envelope is not None and raised_envelope.error_category == "api_response_json_decode_error")
+check("Q3. that exception carries status_code/content_type/body_length captured BEFORE the decode attempt",
+      raised_envelope is not None and raised_envelope.status_code == 200
+      and raised_envelope.content_type == "text/plain" and raised_envelope.body_length == 0)
+check("Q4. that exception carries a (bounded) body_preview, never None when a body was received",
+      raised_envelope is not None and raised_envelope.body_preview == "")
+
+_requests_module.post = _post_returns_empty_model_text
+try:
+    raised_model_output = None
+    try:
+        ea.call_anthropic_evidence_analyst(CS01_STORY, _fake_retrieve_live(CS01_STORY, DEV_CORPUS), DEV_CORPUS,
+                                            "fake-key-not-real")
+    except ea.EvidenceAnalystJSONDecodeError as e:
+        raised_model_output = e
+finally:
+    _requests_module.post = _guard_requests_post
+
+check("Q5. a model-output JSON decode failure (empty text content) raises EvidenceAnalystJSONDecodeError "
+      "(the OTHER exception type, not EvidenceAnalystAPIResponseJSONDecodeError)",
+      raised_model_output is not None)
+check("Q6. that exception's error_category is 'model_output_json_decode_error' -- the two failure modes "
+      "are distinguishable via error_category even when str(exception) is identical text",
+      raised_model_output is not None and raised_model_output.error_category == "model_output_json_decode_error")
+check("Q7. the two exception types' str() CAN be byte-identical (both decode an empty string) yet their "
+      "error_category still differs -- proving the message text alone is not what distinguishes them",
+      raised_envelope is not None and raised_model_output is not None
+      and str(raised_envelope) == str(raised_model_output)
+      and raised_envelope.error_category != raised_model_output.error_category)
+
+# End-to-end through run_live_evidence_analysis: the resulting
+# EvidenceAnalystAttemptDiagnostics records error_category and (for the
+# envelope case only) the HTTP fields -- not just the raw exception.
+_requests_module.post = _post_returns_empty_body
+try:
+    envelope_outcome = ea.run_live_evidence_analysis(CS01_STORY, DEV_CORPUS, api_key="fake-key-not-real",
+                                                       retrieve=_fake_retrieve_live)
+finally:
+    _requests_module.post = _guard_requests_post
+
+check("Q8. end-to-end, the envelope-decode-failure outcome's LAST attempt diagnostics record "
+      "error_category='api_response_json_decode_error'",
+      envelope_outcome.attempts[-1].error_category == "api_response_json_decode_error")
+check("Q9. ...and record http_status_code/http_content_type/http_body_length",
+      envelope_outcome.attempts[-1].http_status_code == 200
+      and envelope_outcome.attempts[-1].http_content_type == "text/plain"
+      and envelope_outcome.attempts[-1].http_body_length == 0)
+check("Q10. ...and request_succeeded is True (a response WAS received -- this is not a transport failure)",
+      envelope_outcome.attempts[-1].request_succeeded is True)
+
+_requests_module.post = _post_returns_empty_model_text
+try:
+    model_output_outcome = ea.run_live_evidence_analysis(CS01_STORY, DEV_CORPUS, api_key="fake-key-not-real",
+                                                           retrieve=_fake_retrieve_live)
+finally:
+    _requests_module.post = _guard_requests_post
+
+check("Q11. end-to-end, the model-output-decode-failure outcome's LAST attempt diagnostics record "
+      "error_category='model_output_json_decode_error'",
+      model_output_outcome.attempts[-1].error_category == "model_output_json_decode_error")
+check("Q12. ...and http_status_code/http_body_length stay None (this is NOT the envelope-failure case)",
+      model_output_outcome.attempts[-1].http_status_code is None
+      and model_output_outcome.attempts[-1].http_body_length is None)
+
+# A genuine transport failure (no response at all) still tags error_category="transport_error".
+outcome_transport = ea.run_live_evidence_analysis(
+    CS01_STORY, DEV_CORPUS, api_key="fake-key-not-real",
+    call_analyst=_timeout_stub, retrieve=_fake_retrieve_live,
+)
+check("Q13. a genuine transport failure (no response received) still tags error_category='transport_error'",
+      outcome_transport.attempts[-1].error_category == "transport_error")
+
+# Secrets: the new HTTP diagnostic fields never leak the api_key either.
+_SECRET_API_KEY_Q = "sk-ant-TOTALLY-SECRET-TEST-KEY-should-never-appear-anywhere-Q"
+_requests_module.post = _post_returns_empty_body
+try:
+    secret_outcome = ea.run_live_evidence_analysis(CS01_STORY, DEV_CORPUS, api_key=_SECRET_API_KEY_Q,
+                                                     retrieve=_fake_retrieve_live)
+finally:
+    _requests_module.post = _guard_requests_post
+_serialized_q = json.dumps([a.to_dict() for a in secret_outcome.attempts])
+check("Q14. the api_key never appears in the new HTTP diagnostic fields (body_preview/content_type/etc.)",
+      _SECRET_API_KEY_Q not in _serialized_q)
+
+# ===========================================================================
 # P. Confirm no real network call was EVER attempted anywhere above
 # ===========================================================================
 check("P1. no real network POST was attempted anywhere in this test file",

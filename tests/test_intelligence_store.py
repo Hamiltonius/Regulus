@@ -10,6 +10,7 @@ bis_watcher.db. The file is removed at the end of the run.
 
 Run: python3 tests/test_intelligence_store.py
 """
+import json
 import os
 import sys
 import tempfile
@@ -229,6 +230,119 @@ rec = st.load_story_artifact("run-1", "CS-01", "corpus_analyst", conn=shared_con
 check("L1. save/load via a shared conn= works and does not close the caller's connection",
       rec is not None and rec.payload == {"story_id": "CS-01"})
 shared_conn.close()
+
+# ===========================================================================
+# M. compute_fingerprint() determinism
+# ===========================================================================
+fp1 = st.compute_fingerprint({"story_id": "CS-01", "a": 1, "b": 2})
+fp2 = st.compute_fingerprint({"b": 2, "a": 1, "story_id": "CS-01"})  # same content, different key order
+check("M1. compute_fingerprint is stable under key reordering (sort_keys)", fp1 == fp2)
+
+fp3 = st.compute_fingerprint({"story_id": "CS-01", "a": 1, "b": 3})  # genuinely different content
+check("M2. compute_fingerprint differs when content differs", fp1 != fp3)
+
+fp_multi_a = st.compute_fingerprint({"story_id": "CS-01"}, {"evidence_records": ["EV-1"]})
+fp_multi_b = st.compute_fingerprint({"story_id": "CS-01"}, {"evidence_records": ["EV-2"]})
+check("M3. compute_fingerprint over multiple parts (story + evidence package) distinguishes them",
+      fp_multi_a != fp_multi_b)
+
+# ===========================================================================
+# N. find_reusable_story_artifact: the core reuse-safety contract
+# ===========================================================================
+db_path = _fresh_db_path("n.db")
+story_v1 = {"story_id": "CS-01", "research_questions": ["Q1?"]}
+fp_v1 = st.compute_fingerprint(story_v1)
+
+st.save_story_artifact("run-1", "CS-01", "evidence_analyst", {"story_id": "CS-01", "evidence_records": []},
+                        is_valid=True, input_fingerprint=fp_v1, db_path=db_path)
+
+reusable = st.find_reusable_story_artifact("run-1", "CS-01", "evidence_analyst", fp_v1, db_path=db_path)
+check("N1. a VALID artifact with a MATCHING fingerprint IS returned as reusable", reusable is not None)
+
+# N2: an INVALID artifact is never reused, even with a matching fingerprint.
+db_path = _fresh_db_path("n2.db")
+st.save_story_artifact("run-1", "CS-02", "evidence_analyst", {"story_id": "CS-02"},
+                        is_valid=False, validation_errors=["evidence_analyst_call_failed: boom"],
+                        input_fingerprint=fp_v1, db_path=db_path)
+reusable = st.find_reusable_story_artifact("run-1", "CS-02", "evidence_analyst", fp_v1, db_path=db_path)
+check("N2. an INVALID artifact is never returned as reusable, even with a matching fingerprint",
+      reusable is None)
+
+# N3: a mismatched fingerprint (the story/input changed) prevents reuse of an otherwise-valid artifact.
+db_path = _fresh_db_path("n3.db")
+story_v2 = {"story_id": "CS-01", "research_questions": ["Q1?", "A DIFFERENT QUESTION NOW"]}
+fp_v2 = st.compute_fingerprint(story_v2)
+st.save_story_artifact("run-1", "CS-01", "evidence_analyst", {"story_id": "CS-01"},
+                        is_valid=True, input_fingerprint=fp_v1, db_path=db_path)
+reusable = st.find_reusable_story_artifact("run-1", "CS-01", "evidence_analyst", fp_v2, db_path=db_path)
+check("N3. a VALID artifact whose stored fingerprint does NOT match the current input's fingerprint "
+      "is never returned as reusable (mismatched story/input)", reusable is None)
+
+# N4: no artifact at all -> None, not an error.
+db_path = _fresh_db_path("n4.db")
+reusable = st.find_reusable_story_artifact("run-1", "CS-99", "evidence_analyst", fp_v1, db_path=db_path)
+check("N4. find_reusable_story_artifact returns None (not an error) when nothing was ever persisted",
+      reusable is None)
+
+# N5: a legacy-shaped row with NO stored fingerprint (input_fingerprint=None) is never treated as
+# reusable, even though it's otherwise valid -- "no fingerprint" means "not proven compatible."
+db_path = _fresh_db_path("n5.db")
+st.save_story_artifact("run-1", "CS-03", "evidence_analyst", {"story_id": "CS-03"},
+                        is_valid=True, db_path=db_path)  # input_fingerprint intentionally omitted
+reusable = st.find_reusable_story_artifact("run-1", "CS-03", "evidence_analyst", fp_v1, db_path=db_path)
+check("N5. a valid artifact with NO stored fingerprint at all is never treated as reusable",
+      reusable is None)
+
+# N6: reuse never crosses run_id, even with an identical fingerprint and a valid artifact.
+db_path = _fresh_db_path("n6.db")
+st.save_story_artifact("run-A", "CS-01", "evidence_analyst", {"story_id": "CS-01"},
+                        is_valid=True, input_fingerprint=fp_v1, db_path=db_path)
+reusable = st.find_reusable_story_artifact("run-B", "CS-01", "evidence_analyst", fp_v1, db_path=db_path)
+check("N6. a valid, fingerprint-matching artifact from a DIFFERENT run_id is never reused",
+      reusable is None)
+
+# N7: Pass #2 reuse works the same way as Evidence Analyst reuse (same function, different stage).
+db_path = _fresh_db_path("n7.db")
+fp_pass2 = st.compute_fingerprint(story_v1, {"evidence_records": [{"evidence_id": "EV-1"}]})
+st.save_story_artifact("run-1", "CS-01", "pass2", {"story_id": "CS-01", "editor_eligibility": "eligible"},
+                        is_valid=True, input_fingerprint=fp_pass2, db_path=db_path)
+reusable = st.find_reusable_story_artifact("run-1", "CS-01", "pass2", fp_pass2, db_path=db_path)
+check("N7. Pass #2 artifacts are reusable through the same find_reusable_story_artifact function",
+      reusable is not None and reusable.payload["editor_eligibility"] == "eligible")
+
+# ===========================================================================
+# O. Schema migration: a pre-existing story_artifacts table with no
+# input_fingerprint column gets the column added automatically, without
+# touching existing row data.
+# ===========================================================================
+import sqlite3 as _sqlite3
+
+db_path = _fresh_db_path("o.db")
+_legacy_conn = _sqlite3.connect(db_path)
+_legacy_conn.executescript("""
+CREATE TABLE story_artifacts (
+    run_id TEXT NOT NULL, story_id TEXT NOT NULL, stage TEXT NOT NULL,
+    payload_json TEXT NOT NULL, is_valid INTEGER NOT NULL,
+    validation_errors_json TEXT NOT NULL, failure_reason TEXT, saved_at TEXT NOT NULL,
+    PRIMARY KEY (run_id, story_id, stage)
+);
+""")
+_legacy_conn.execute(
+    "INSERT INTO story_artifacts (run_id, story_id, stage, payload_json, is_valid, "
+    "validation_errors_json, failure_reason, saved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    ("run-legacy", "CS-01", "corpus_analyst", json.dumps({"story_id": "CS-01"}), 1, "[]", None, "2026-01-01T00:00:00+00:00"),
+)
+_legacy_conn.commit()
+_legacy_conn.close()
+
+migrated_conn = st.get_connection(db_path)  # must not raise on the pre-existing, column-less table
+rec = st.load_story_artifact("run-legacy", "CS-01", "corpus_analyst", conn=migrated_conn)
+migrated_conn.close()
+check("O1. get_connection migrates a legacy table missing input_fingerprint without raising", rec is not None)
+check("O2. the pre-existing row's data survives the migration untouched",
+      rec.payload == {"story_id": "CS-01"} and rec.is_valid is True)
+check("O3. the migrated column reads back as None for the pre-existing row (never fabricated)",
+      rec.input_fingerprint is None)
 
 # ===========================================================================
 # Summary
