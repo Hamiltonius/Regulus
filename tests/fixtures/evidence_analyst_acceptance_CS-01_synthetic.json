@@ -1,0 +1,237 @@
+{
+  "run_metadata": {
+    "story_id": "CS-01",
+    "started_at": "2026-10-06T21:38:30+00:00",
+    "finished_at": "2026-10-06T21:38:34+00:00",
+    "model": "synthetic-test-fixture",
+    "max_tokens": 0,
+    "timeout_seconds": 0,
+    "max_attempts": 2,
+    "web_search_max_uses": 10,
+    "prompt_version": "synthetic",
+    "schema_version": "synthetic",
+    "corpus_fixture": "tests/fixtures/corpus_acceptance_3.json",
+    "corpus_analyst_fixture": "tests/fixtures/corpus_analyst_acceptance_3.json"
+  },
+  "outcome": {
+    "is_valid": true,
+    "validation_status": "valid",
+    "validation_errors": [],
+    "failure_reason": null,
+    "raw": {
+      "story_id": "CS-01",
+      "research_status": "partial",
+      "hypothesis_assessment": "unresolved",
+      "question_findings": [
+        {
+          "question": "Does 2026-20082 cite the same June 2025 Presidential determination referenced in 2026-18918, or a different upstream authority \u2014 establishing whether these are one downstream decision or multiple independent policy triggers?",
+          "status": "unanswered",
+          "finding": "",
+          "evidence_ids": [],
+          "confidence": "low"
+        },
+        {
+          "question": "Does 2026-19657 identify which specific OFAC sanctions programs (e.g., E.O. 13894, Syria Sanctions Regulations) remain operative against Syrian persons following the Terrorism List Regulations amendment?",
+          "status": "unanswered",
+          "finding": "",
+          "evidence_ids": [],
+          "confidence": "low"
+        },
+        {
+          "question": "Does the primary text of 2026-19161 and 2026-19404 contain Syria-specific language in the policy-of-denial amendments, or is Syria addressed exclusively in 2026-20082?",
+          "status": "unanswered",
+          "finding": "",
+          "evidence_ids": [],
+          "confidence": "low"
+        },
+        {
+          "question": "Was a corresponding BIS/Commerce action updating EAR Syria-country policy published in this or an adjacent reporting period?",
+          "status": "unanswered",
+          "finding": "",
+          "evidence_ids": [],
+          "confidence": "low"
+        },
+        {
+          "question": "What is the precise date of the Presidential determination rescinding Syria's State Sponsor of Terrorism designation, and does it predate or postdate the June 2025 CBW Act waiver referenced in 2026-18918?",
+          "status": "unanswered",
+          "finding": "",
+          "evidence_ids": [],
+          "confidence": "low"
+        }
+      ],
+      "evidence_records": [
+        {
+          "evidence_id": "EV-1",
+          "document_number": "2026-18918",
+          "source_title": "Synthetic title",
+          "source_url": "https://www.federalregister.gov/documents/x/2026-18918",
+          "source_type": "primary",
+          "primary_source": true,
+          "retrieved_at": "2026-10-06T21:38:34+00:00",
+          "source_identity_status": "verified",
+          "publication_date": "2026-09-16",
+          "effective_date": "2026-09-16",
+          "relevant_excerpt": "Synthetic excerpt.",
+          "supports": [],
+          "contradicts": [],
+          "limitations": ""
+        },
+        {
+          "evidence_id": "EV-2",
+          "document_number": "2026-19161",
+          "source_title": "Synthetic title",
+          "source_url": "https://www.federalregister.gov/documents/x/2026-19161",
+          "source_type": "primary",
+          "primary_source": true,
+          "retrieved_at": "2026-10-06T21:38:34+00:00",
+          "source_identity_status": "verified",
+          "publication_date": "2026-09-16",
+          "effective_date": "2026-09-16",
+          "relevant_excerpt": "Synthetic excerpt.",
+          "supports": [],
+          "contradicts": [],
+          "limitations": ""
+        },
+        {
+          "evidence_id": "EV-3",
+          "document_number": "2026-19404",
+          "source_title": "Synthetic title",
+          "source_url": "https://www.federalregister.gov/documents/x/2026-19404",
+          "source_type": "primary",
+          "primary_source": true,
+          "retrieved_at": "2026-10-06T21:38:34+00:00",
+          "source_identity_status": "verified",
+          "publication_date": "2026-09-16",
+          "effective_date": "2026-09-16",
+          "relevant_excerpt": "Synthetic excerpt.",
+          "supports": [],
+          "contradicts": [],
+          "limitations": ""
+        },
+        {
+          "evidence_id": "EV-4",
+          "document_number": "2026-19657",
+          "source_title": "Synthetic title",
+          "source_url": "https://www.federalregister.gov/documents/x/2026-19657",
+          "source_type": "primary",
+          "primary_source": true,
+          "retrieved_at": "2026-10-06T21:38:34+00:00",
+          "source_identity_status": "verified",
+          "publication_date": "2026-09-16",
+          "effective_date": "2026-09-16",
+          "relevant_excerpt": "Synthetic excerpt.",
+          "supports": [],
+          "contradicts": [],
+          "limitations": ""
+        },
+        {
+          "evidence_id": "EV-5",
+          "document_number": "2026-20082",
+          "source_title": "Synthetic title",
+          "source_url": "https://www.federalregister.gov/documents/x/2026-20082",
+          "source_type": "primary",
+          "primary_source": true,
+          "retrieved_at": "2026-10-06T21:38:34+00:00",
+          "source_identity_status": "verified",
+          "publication_date": "2026-09-16",
+          "effective_date": "2026-09-16",
+          "relevant_excerpt": "Synthetic excerpt.",
+          "supports": [],
+          "contradicts": [],
+          "limitations": ""
+        }
+      ],
+      "contradictions": [],
+      "remaining_gaps": [],
+      "disconfirming_evidence_found": [],
+      "overall_assessment": "Synthetic overall assessment for local/offline testing.",
+      "confidence": "low"
+    }
+  },
+  "retrieval": {
+    "story_id": "CS-01",
+    "documents": [
+      {
+        "document_number": "2026-18918",
+        "status": "retrieved",
+        "identity_status": "verified",
+        "source_url": "https://www.federalregister.gov/documents/x/2026-18918",
+        "pdf_url": null,
+        "primary_source": true,
+        "text": "Synthetic retrieved text.",
+        "text_source": "pdf_full",
+        "truncated": false,
+        "publication_date": "2026-09-16",
+        "effective_date": "2026-09-16",
+        "retrieved_at": "2026-10-06T21:38:34+00:00",
+        "failure_reason": null,
+        "failure_detail": null
+      },
+      {
+        "document_number": "2026-19161",
+        "status": "retrieved",
+        "identity_status": "verified",
+        "source_url": "https://www.federalregister.gov/documents/x/2026-19161",
+        "pdf_url": null,
+        "primary_source": true,
+        "text": "Synthetic retrieved text.",
+        "text_source": "pdf_full",
+        "truncated": false,
+        "publication_date": "2026-09-16",
+        "effective_date": "2026-09-16",
+        "retrieved_at": "2026-10-06T21:38:34+00:00",
+        "failure_reason": null,
+        "failure_detail": null
+      },
+      {
+        "document_number": "2026-19404",
+        "status": "retrieved",
+        "identity_status": "verified",
+        "source_url": "https://www.federalregister.gov/documents/x/2026-19404",
+        "pdf_url": null,
+        "primary_source": true,
+        "text": "Synthetic retrieved text.",
+        "text_source": "pdf_full",
+        "truncated": false,
+        "publication_date": "2026-09-16",
+        "effective_date": "2026-09-16",
+        "retrieved_at": "2026-10-06T21:38:34+00:00",
+        "failure_reason": null,
+        "failure_detail": null
+      },
+      {
+        "document_number": "2026-19657",
+        "status": "retrieved",
+        "identity_status": "verified",
+        "source_url": "https://www.federalregister.gov/documents/x/2026-19657",
+        "pdf_url": null,
+        "primary_source": true,
+        "text": "Synthetic retrieved text.",
+        "text_source": "pdf_full",
+        "truncated": false,
+        "publication_date": "2026-09-16",
+        "effective_date": "2026-09-16",
+        "retrieved_at": "2026-10-06T21:38:34+00:00",
+        "failure_reason": null,
+        "failure_detail": null
+      },
+      {
+        "document_number": "2026-20082",
+        "status": "retrieved",
+        "identity_status": "verified",
+        "source_url": "https://www.federalregister.gov/documents/x/2026-20082",
+        "pdf_url": null,
+        "primary_source": true,
+        "text": "Synthetic retrieved text.",
+        "text_source": "pdf_full",
+        "truncated": false,
+        "publication_date": "2026-09-16",
+        "effective_date": "2026-09-16",
+        "retrieved_at": "2026-10-06T21:38:34+00:00",
+        "failure_reason": null,
+        "failure_detail": null
+      }
+    ]
+  },
+  "attempts": []
+}

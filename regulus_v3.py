@@ -49,6 +49,8 @@ from urllib.parse import urlparse
 import requests
 from fpdf import FPDF
 
+import dd_pipeline
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("regulus")
 
@@ -126,7 +128,7 @@ SCORE_DIGEST_MAX = 8       # store, low-priority (not emailed by this script)
 # three digits, optional dotted sub-paragraph.
 ECCN_PATTERN = re.compile(r'\b[0-9][A-Z][0-9]{3}(?:\.[a-z0-9]+)?\b')
 
-ANALYSIS_SCHEMA_PROMPT = """You are a U.S. export-controls regulatory analyst supporting a
+ANALYSIS_SCHEMA_PROMPT = f"""You are a U.S. export-controls regulatory analyst supporting a
 defense/aerospace compliance organization. Analyze the supplied government document.
 
 Rules:
@@ -137,9 +139,27 @@ Rules:
 - Every list field (authority, countries, entities, eccns, ear_sections,
   recommended_actions) must contain plain strings only — never objects/dicts.
 
+CHANGE_TYPE: `change_type` MUST be exactly one value from this controlled
+list — no other text, phrasing, or variation is permitted:
+
+{", ".join(sorted(dd_pipeline.CHANGE_TYPE_VALUES))}
+
+Boundary guidance for the categories most often confused:
+- sanctions_waiver: material sanctions relief that does NOT terminate
+  the broader sanctions regime (e.g. a waiver, general license, or
+  partial lift of specific restrictions).
+- sanctions_regime_terminated: termination/rescission/removal of the
+  sanctions regime itself, or of its remaining major restrictions —
+  broader than a single waiver.
+- other: you confidently understand what action the document takes, but
+  it does not fit any of the other controlled values above.
+- unknown: the action cannot be reliably classified from the source text.
+This field classifies WHAT ACTION the document takes — it is not a
+judgment of how important that action is.
+
 Return ONLY valid JSON, no prose, no markdown fences, matching exactly this shape:
 
-{
+{{
   "title": "",
   "agency": [],
   "publication_date": "",
@@ -157,7 +177,7 @@ Return ONLY valid JSON, no prose, no markdown fences, matching exactly this shap
   "recommended_actions": [],
   "primary_sources": [],
   "confidence": "High | Medium | Low"
-}
+}}
 """
 
 # ---------------------------------------------------------------------------
@@ -209,6 +229,12 @@ def get_db():
     _ensure_column(conn, "alerts", "analysis_model", "TEXT")
     _ensure_column(conn, "alerts", "analysis_generated_at", "TEXT")
     conn.commit()
+
+    # DD pipeline schema (due_diligence_records table + escalated-alert
+    # columns on alerts). Additive only — see dd_pipeline.ensure_dd_schema.
+    # This is the only integration point get_db() needed.
+    dd_pipeline.ensure_dd_schema(conn)
+
     return conn
 
 
@@ -382,6 +408,44 @@ def format_email(analysis, doc_url, score):
     return "\n".join(lines)
 
 
+def format_email_dd(final, doc_url, score):
+    """DD-escalated alert email body. Per the frozen spec's "Output
+    behavior" section, this REPLACES format_email's analytical content for
+    an escalated alert — the reader sees only Stage 3's validated,
+    value-only synthesis, never raw Stage 2 research."""
+    lines = [
+        final.get("headline") or doc_url,
+        f"Confidence: {final.get('confidence', 'n/a')}   |   Score: {score}   |   [Due diligence review]",
+        "",
+        final.get("bottom_line") or "",
+        "",
+        "What changed:",
+        final.get("what_changed") or "",
+        "",
+        "Why it matters:",
+        final.get("why_it_matters") or "",
+        "",
+        "Historical significance:",
+        final.get("historical_significance") or "",
+        "",
+        "What did NOT change:",
+        final.get("what_did_not_change") or "",
+        "",
+        "Compliance attention:",
+    ]
+    for item in final.get("compliance_attention") or []:
+        lines.append(f"  - {item}")
+    lines += ["", "Watch next:"]
+    for item in final.get("watch_next") or []:
+        lines.append(f"  - {item}")
+    lines += ["", "Sources:"]
+    for src in final.get("sources") or []:
+        if isinstance(src, dict):
+            lines.append(f"  - {src.get('url', '')} ({src.get('agency', '')}, {src.get('date', '')})")
+    lines += ["", f"Primary source: {doc_url}"]
+    return "\n".join(lines)
+
+
 def send_email(subject, body):
     user = os.environ["GMAIL_USER"]
     password = os.environ["GMAIL_APP_PASSWORD"]
@@ -512,6 +576,75 @@ def save_pdf(analysis, doc_url, score, doc_hash, document_number=None, fetched_a
     path = os.path.join(PDF_DIR, f"{date_prefix}_{doc_id}_{safe_title}.pdf")
     pdf.output(path)
     log.info("Saved PDF: %s", path)
+    return path
+
+
+def save_pdf_dd(final, doc_url, score, doc_hash, document_number=None, fetched_at=None):
+    """DD-escalated alert PDF. Mirrors save_pdf's layout/helpers exactly but
+    is sourced from Stage 3's validated value-only synthesis, per the
+    frozen spec's Output behavior section — never from raw Stage 2
+    research."""
+    os.makedirs(PDF_DIR, exist_ok=True)
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(0, 8, _pdf_safe(final.get("headline") or doc_hash))
+    pdf.set_font("Helvetica", "", 10)
+    pdf.ln(2)
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(0, 6, _pdf_safe(f"[Due diligence review]  |  Confidence: {final.get('confidence', 'n/a')}  |  Score: {score}"))
+    pdf.ln(2)
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(0, 6, _pdf_safe(final.get("bottom_line") or ""))
+    pdf.ln(2)
+
+    def field(label, value):
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(0, 6, label)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(0, 6, _pdf_safe(value) or "n/a")
+        pdf.ln(1)
+
+    field("What changed:", final.get("what_changed"))
+    field("Why it matters:", final.get("why_it_matters"))
+    field("Historical significance:", final.get("historical_significance"))
+    field("What did NOT change:", final.get("what_did_not_change"))
+
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(0, 6, "Compliance attention:")
+    pdf.set_font("Helvetica", "", 10)
+    for item in final.get("compliance_attention") or []:
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(0, 6, _pdf_safe(f"  - {item}"))
+
+    pdf.ln(1)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(0, 6, "Watch next:")
+    pdf.set_font("Helvetica", "", 10)
+    for item in final.get("watch_next") or []:
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(0, 6, _pdf_safe(f"  - {item}"))
+
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "I", 9)
+    for src in final.get("sources") or []:
+        if isinstance(src, dict):
+            pdf.set_x(pdf.l_margin)
+            pdf.multi_cell(0, 6, _pdf_safe(f"Source: {src.get('url', '')} ({src.get('agency', '')}, {src.get('date', '')})"))
+    pdf.set_x(pdf.l_margin)
+    pdf.multi_cell(0, 6, _pdf_safe(f"Primary source: {doc_url or 'n/a'}"))
+
+    date_prefix = (fetched_at or datetime.now(timezone.utc).isoformat())[:10]
+    safe_title = "".join(c if c.isalnum() or c in " -_" else "_" for c in (final.get("headline") or doc_hash))[:60]
+    doc_id = document_number or doc_hash[:12]
+    path = os.path.join(PDF_DIR, f"{date_prefix}_{doc_id}_{safe_title}_DD.pdf")
+    pdf.output(path)
+    log.info("Saved DD PDF: %s", path)
     return path
 
 
@@ -742,6 +875,14 @@ def main():
                 "analysis_generated_at": datetime.now(timezone.utc).isoformat(),
             })
 
+        # DD Gate — deterministic, no LLM call. Only evaluated when Stage 1
+        # analysis succeeded (the Gate's signature requires an analysis
+        # dict); a Stage 1 failure already means no email/PDF goes out for
+        # this document via the existing pipeline either. Integration
+        # point per docs/REGULUS_DD_SPEC_v1.0.md.
+        dd_escalated = bool(analysis) and dd_pipeline.needs_due_diligence(analysis, doc)
+        row["due_diligence_ran"] = 1 if dd_escalated else 0
+
         # NEW: additive regex/fitz ECCN test path — only for documents that
         # crossed the analysis threshold, and never allowed to affect the
         # row above (built before this runs) or raise past this point.
@@ -759,14 +900,54 @@ def main():
         conn.execute(f"INSERT INTO alerts ({cols}) VALUES ({placeholders})", list(row.values()))
         conn.commit()
 
+        # Run DD after the alerts row exists (due_diligence_records.doc_hash
+        # references alerts.doc_hash). Stage 2 -> validator -> Stage 3 ->
+        # validator, in the order the frozen spec mandates; never raises —
+        # failure is reported in dd_outcome and falls back to existing
+        # Stage-1-only output below (see docs/REGULUS_DD_SPEC_v1.0.md
+        # "Output behavior").
+        final_stage3 = None
+        if dd_escalated:
+            try:
+                dd_outcome = dd_pipeline.run_due_diligence(doc, analysis, conn, doc_hash, doc_number)
+                if dd_outcome.stage3_valid:
+                    final_stage3 = dd_outcome.stage3
+                    conn.execute(
+                        "UPDATE alerts SET headline=?, bottom_line=?, why_it_matters=?, "
+                        "historical_significance=?, what_did_not_change=?, compliance_attention=?, "
+                        "watch_next=?, final_confidence=? WHERE doc_hash=?",
+                        (
+                            final_stage3.get("headline"), final_stage3.get("bottom_line"),
+                            final_stage3.get("why_it_matters"), final_stage3.get("historical_significance"),
+                            final_stage3.get("what_did_not_change"),
+                            json.dumps(final_stage3.get("compliance_attention", [])),
+                            json.dumps(final_stage3.get("watch_next", [])),
+                            final_stage3.get("confidence"), doc_hash,
+                        ),
+                    )
+                    conn.commit()
+                else:
+                    log.warning("DD did not produce a usable Stage 3 output for %s (reason=%s); "
+                                "falling back to Stage 1 output", doc_number, dd_outcome.failure_reason)
+            except Exception as e:
+                log.error("DD pipeline raised unexpectedly for %s (non-fatal, falling back to "
+                          "Stage 1 output): %s", doc_number, e)
+
         if analysis and score > SCORE_DIGEST_MAX:
             try:
-                save_pdf(analysis, doc.get("html_url"), score, doc_hash, doc.get("document_number"), now)
+                if final_stage3:
+                    save_pdf_dd(final_stage3, doc.get("html_url"), score, doc_hash, doc.get("document_number"), now)
+                else:
+                    save_pdf(analysis, doc.get("html_url"), score, doc_hash, doc.get("document_number"), now)
             except Exception as e:
                 log.error("PDF save failed for %s: %s", doc_number, e)
             try:
-                subject = f"[Export Control Alert] {analysis.get('title', doc_number)[:100]}"
-                body = format_email(analysis, doc.get("html_url"), score)
+                if final_stage3:
+                    subject = f"[Export Control Alert - DD] {final_stage3.get('headline', doc_number)[:100]}"
+                    body = format_email_dd(final_stage3, doc.get("html_url"), score)
+                else:
+                    subject = f"[Export Control Alert] {analysis.get('title', doc_number)[:100]}"
+                    body = format_email(analysis, doc.get("html_url"), score)
                 send_email(subject, body)
                 conn.execute(
                     "UPDATE alerts SET emailed_at = ? WHERE doc_hash = ?",
@@ -782,14 +963,14 @@ def main():
         "SELECT doc_hash, document_number, fetched_at, title, summary, effective_date, authority, countries, "
         "entities, eccns, ear_sections, licensing_impact, defense_impact, "
         "remaining_controls, recommended_actions, primary_source_url, confidence, "
-        "change_type, score FROM alerts WHERE score > ? AND emailed_at IS NULL",
+        "change_type, score, due_diligence_ran FROM alerts WHERE score > ? AND emailed_at IS NULL",
         (SCORE_DIGEST_MAX,),
     ).fetchall()
 
     for r in unsent:
         (doc_hash, document_number, fetched_at, title, summary, effective_date, authority, countries, entities,
          eccns, ear_sections, licensing_impact, defense_impact, remaining_controls,
-         recommended_actions, url, confidence, change_type, score) = r
+         recommended_actions, url, confidence, change_type, score, due_diligence_ran) = r
         analysis = {
             "title": title, "summary": summary, "effective_date": effective_date,
             "authority": json.loads(authority or "[]"), "countries": json.loads(countries or "[]"),
@@ -799,13 +980,33 @@ def main():
             "recommended_actions": json.loads(recommended_actions or "[]"),
             "confidence": confidence, "change_type": change_type,
         }
+        # DD-escalated alerts recover their ORIGINAL validated Stage 3
+        # output — including its correct, C2-compliant sources — from
+        # due_diligence_records, not from flattened alerts columns (alerts
+        # deliberately carries no sources column; see
+        # dd_pipeline.get_latest_valid_stage3). This does NOT call Stage 2/
+        # Stage 3 again, does NOT perform web research, and does NOT create
+        # a new due_diligence_records row — it only reads back what the
+        # original successful run already persisted. If no valid record
+        # with a persisted Stage 3 result exists (DD never ran, or it ran
+        # but never produced a valid Stage 3 output), this falls back
+        # safely to ordinary Stage 1 retry behavior below rather than
+        # inventing or reconstructing evidence.
+        final_stage3 = dd_pipeline.get_latest_valid_stage3(conn, doc_hash) if due_diligence_ran else None
         try:
-            save_pdf(analysis, url, score, doc_hash, document_number, fetched_at)
+            if final_stage3:
+                save_pdf_dd(final_stage3, url, score, doc_hash, document_number, fetched_at)
+            else:
+                save_pdf(analysis, url, score, doc_hash, document_number, fetched_at)
         except Exception as e:
             log.error("Retry PDF save failed for %s: %s", doc_hash, e)
         try:
-            subject = f"[Export Control Alert] {(title or doc_hash)[:100]}"
-            send_email(subject, format_email(analysis, url, score))
+            if final_stage3:
+                subject = f"[Export Control Alert - DD] {(final_stage3.get('headline') or doc_hash)[:100]}"
+                send_email(subject, format_email_dd(final_stage3, url, score))
+            else:
+                subject = f"[Export Control Alert] {(title or doc_hash)[:100]}"
+                send_email(subject, format_email(analysis, url, score))
             conn.execute(
                 "UPDATE alerts SET emailed_at = ? WHERE doc_hash = ?",
                 (datetime.now(timezone.utc).isoformat(), doc_hash),
