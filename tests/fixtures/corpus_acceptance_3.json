@@ -1,0 +1,2901 @@
+{
+  "reporting_period": {
+    "start": "2026-09-14",
+    "end": "2026-10-05"
+  },
+  "observation_count": 87,
+  "observations": [
+    {
+      "document_number": "2026-18641",
+      "publication_date": "2026-09-14",
+      "effective_date": null,
+      "title": "Notice of OFAC Sanctions Action",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 18,
+      "countries": [],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Notice \u2013 SDN List Addition",
+      "summary": "OFAC has designated one or more persons to the Specially Designated Nationals and Blocked Persons (SDN) List pursuant to applicable legal criteria. All property and interests in property subject to U.S. jurisdiction of the designated persons are blocked. U.S. persons are generally prohibited from engaging in transactions with them. Specific names, nationalities, legal criteria invoked, and underlying statutory/executive order authorities are not provided in the source document.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/14/2026-18641/notice-of-ofac-sanctions-action",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-18678",
+      "publication_date": "2026-09-14",
+      "effective_date": null,
+      "title": "Notice of OFAC Sanctions Actions",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 11,
+      "countries": [],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Update \u2013 Identifying Information Amendment to Existing Sanctions List Entries",
+      "summary": "OFAC published a notice (91 FR 58250) updating the identifying information for one or more entries currently included on one or more OFAC sanctions lists. The notice does not add new designations or remove existing designations; it corrects or supplements identifying details for already-listed persons or entities. No specific entity names, countries, or sanctions programs are identified in the available document text.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/14/2026-18678/notice-of-ofac-sanctions-actions",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-18730",
+      "publication_date": "2026-09-14",
+      "effective_date": null,
+      "title": "Agency Information Collection Activities; Comment Request on U.S. Employment Tax Returns and Related Forms, Schedules, Attachments, and Published Guidance",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Internal Revenue Service",
+          "name": "Internal Revenue Service",
+          "id": 254,
+          "url": "https://www.federalregister.gov/agencies/internal-revenue-service",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/254",
+          "parent_id": 497,
+          "slug": "internal-revenue-service"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/14/2026-18730/agency-information-collection-activities-comment-request-on-us-employment-tax-returns-and-related",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-18766",
+      "publication_date": "2026-09-14",
+      "effective_date": "2026-09-14",
+      "title": "Expanded Examination Cycle for Certain Small Insured Depository Institutions and U.S. Branches and Agencies of Foreign Banks",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of the Comptroller of the Currency",
+          "name": "Comptroller of the Currency",
+          "id": 80,
+          "url": "https://www.federalregister.gov/agencies/comptroller-of-the-currency",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/80",
+          "parent_id": 497,
+          "slug": "comptroller-of-the-currency"
+        },
+        {
+          "raw_name": "FEDERAL RESERVE SYSTEM",
+          "name": "Federal Reserve System",
+          "id": 188,
+          "url": "https://www.federalregister.gov/agencies/federal-reserve-system",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/188",
+          "parent_id": null,
+          "slug": "federal-reserve-system"
+        },
+        {
+          "raw_name": "FEDERAL DEPOSIT INSURANCE CORPORATION",
+          "name": "Federal Deposit Insurance Corporation",
+          "id": 164,
+          "url": "https://www.federalregister.gov/agencies/federal-deposit-insurance-corporation",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/164",
+          "parent_id": null,
+          "slug": "federal-deposit-insurance-corporation"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/14/2026-18766/expanded-examination-cycle-for-certain-small-insured-depository-institutions-and-us-branches-and",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-18801",
+      "publication_date": "2026-09-15",
+      "effective_date": null,
+      "title": "Privacy Act of 1974; System of Records",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/15/2026-18801/privacy-act-of-1974-system-of-records",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-18840",
+      "publication_date": "2026-09-15",
+      "effective_date": null,
+      "title": "Notice of OFAC Sanctions Action",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 18,
+      "countries": [],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Notice",
+      "summary": "OFAC is publishing the names of one or more persons newly added to the Specially Designated Nationals and Blocked Persons (SDN) List. All property and interests in property subject to U.S. jurisdiction belonging to these persons are blocked. U.S. persons are generally prohibited from engaging in transactions with the listed persons. Specific names, nationalities, and legal authorities cited are not included in the supplied document excerpt.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/15/2026-18840/notice-of-ofac-sanctions-action",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-18859",
+      "publication_date": "2026-09-15",
+      "effective_date": null,
+      "title": "Proposed Third-Party Risk Management Guidance",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of the Comptroller of the Currency",
+          "name": "Comptroller of the Currency",
+          "id": 80,
+          "url": "https://www.federalregister.gov/agencies/comptroller-of-the-currency",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/80",
+          "parent_id": 497,
+          "slug": "comptroller-of-the-currency"
+        },
+        {
+          "raw_name": "FEDERAL RESERVE SYSTEM",
+          "name": "Federal Reserve System",
+          "id": 188,
+          "url": "https://www.federalregister.gov/agencies/federal-reserve-system",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/188",
+          "parent_id": null,
+          "slug": "federal-reserve-system"
+        },
+        {
+          "raw_name": "FEDERAL DEPOSIT INSURANCE CORPORATION",
+          "name": "Federal Deposit Insurance Corporation",
+          "id": 164,
+          "url": "https://www.federalregister.gov/agencies/federal-deposit-insurance-corporation",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/164",
+          "parent_id": null,
+          "slug": "federal-deposit-insurance-corporation"
+        },
+        {
+          "raw_name": "NATIONAL CREDIT UNION ADMINISTRATION",
+          "name": "National Credit Union Administration",
+          "id": 335,
+          "url": "https://www.federalregister.gov/agencies/national-credit-union-administration",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/335",
+          "parent_id": null,
+          "slug": "national-credit-union-administration"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/15/2026-18859/proposed-third-party-risk-management-guidance",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-18876",
+      "publication_date": "2026-09-15",
+      "effective_date": null,
+      "title": "Notice of OFAC Sanctions Action",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 18,
+      "countries": [],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Notice \u2014 SDN List Addition",
+      "summary": "OFAC published a notice (91 FR 58544) adding one or more persons to the Specially Designated Nationals and Blocked Persons (SDN) List based on a determination that applicable legal criteria were satisfied. All property and interests in property subject to U.S. jurisdiction held by the designated persons are blocked. U.S. persons are generally prohibited from engaging in transactions with the designated parties. Specific names of designated persons, legal authority invoked, and country nexus are not included in the supplied document text.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/15/2026-18876/notice-of-ofac-sanctions-action",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-18883",
+      "publication_date": "2026-09-15",
+      "effective_date": null,
+      "title": "Funding Opportunity; Notice of Allocation Availability Inviting Applications for the Calendar Years 2026 Allocation Round of the New Markets Tax Credit Program",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Community Development Financial Institutions Fund",
+          "name": "Community Development Financial Institutions Fund",
+          "id": 78,
+          "url": "https://www.federalregister.gov/agencies/community-development-financial-institutions-fund",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/78",
+          "parent_id": 497,
+          "slug": "community-development-financial-institutions-fund"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/15/2026-18883/funding-opportunity-notice-of-allocation-availability-inviting-applications-for-the-calendar-years",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-18909",
+      "publication_date": "2026-09-15",
+      "effective_date": null,
+      "title": "Notice of OFAC Sanctions Action",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 18,
+      "countries": [],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Notice",
+      "summary": "OFAC has added one or more persons to the Specially Designated Nationals and Blocked Persons List (SDN List). All property and interests in property subject to U.S. jurisdiction belonging to the listed persons are blocked. U.S. persons are generally prohibited from engaging in transactions with them. Specific names, countries, and legal authorities are not provided in the source excerpt.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/15/2026-18909/notice-of-ofac-sanctions-action",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-18914",
+      "publication_date": "2026-09-16",
+      "effective_date": "2026-10-13",
+      "title": "International Traffic in Arms Regulations: Modification of Civil Aircraft To Incorporate Aircraft Survivability Equipment",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 12,
+      "countries": [],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Correction",
+      "summary": "The Department of State is issuing a correction to an interim final rule published in the Federal Register on August 28, 2026 (91 FR 58610), which addressed modification of civil aircraft to incorporate Aircraft Survivability Equipment under the International Traffic in Arms Regulations (ITAR). The correction fixes an error in Amendatory Instruction 2 of the interim final rule in order to clarify the Department's original intent. No substantive regulatory change beyond the correction is described in the source text.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/16/2026-18914/international-traffic-in-arms-regulations-modification-of-civil-aircraft-to-incorporate-aircraft",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-18918",
+      "publication_date": "2026-09-16",
+      "effective_date": "2026-09-16",
+      "title": "Waiver of Sanctions on Syria Under the Chemical and Biological Weapons Control and Warfare Elimination Act of 1991",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 10,
+      "countries": [
+        "Syria"
+      ],
+      "entities": [
+        "Government of the Syrian Arab Republic",
+        "Assad regime",
+        "Under Secretary for Arms Control and Nonproliferation"
+      ],
+      "eccns": [],
+      "change_type": "Sanctions Waiver",
+      "summary": "Two sequential waiver actions lifted CBW Act sanctions on Syria. First, on June 30, 2025, the President determined there had been a fundamental change in the leadership and policies of the Government of the Syrian Arab Republic and waived all CBW Act sanctions imposed on Syria stemming from the Assad regime's use of chemical weapons \u2014 except the restrictions on arms sales and arms sales financing, which were explicitly retained. Second, on August 20, 2026, the Under Secretary for Arms Control and Nonproliferation determined it was essential to U.S. national security to waive those two remaining restrictions (arms sales and arms sales financing). The notice was published and effective September 16, 2026 (91 FR 58740).",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/16/2026-18918/waiver-of-sanctions-on-syria-under-the-chemical-and-biological-weapons-control-and-warfare",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-18958",
+      "publication_date": "2026-09-16",
+      "effective_date": null,
+      "title": "Delegation of Authority for Visa Bond Waivers",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/16/2026-18958/delegation-of-authority-for-visa-bond-waivers",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19013",
+      "publication_date": "2026-09-16",
+      "effective_date": null,
+      "title": "Racial Nondiscrimination in Private Schools; Hearing",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Internal Revenue Service",
+          "name": "Internal Revenue Service",
+          "id": 254,
+          "url": "https://www.federalregister.gov/agencies/internal-revenue-service",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/254",
+          "parent_id": 497,
+          "slug": "internal-revenue-service"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/16/2026-19013/racial-nondiscrimination-in-private-schools-hearing",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19020",
+      "publication_date": "2026-09-17",
+      "effective_date": null,
+      "title": "PJSC Aeroflot, 1 Arbat St., 119019, Moscow, Russia; Order Renewing Temporary Denial of Export Privileges",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF COMMERCE",
+          "name": "Commerce Department",
+          "id": 54,
+          "url": "https://www.federalregister.gov/agencies/commerce-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/54",
+          "parent_id": null,
+          "slug": "commerce-department"
+        },
+        {
+          "raw_name": "Bureau of Industry and Security",
+          "name": "Industry and Security Bureau",
+          "id": 241,
+          "url": "https://www.federalregister.gov/agencies/industry-and-security-bureau",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/241",
+          "parent_id": 54,
+          "slug": "industry-and-security-bureau"
+        }
+      ],
+      "score": 15,
+      "countries": [
+        "Russia"
+      ],
+      "entities": [
+        "PJSC Aeroflot, 1 Arbat St., 119019, Moscow, Russia"
+      ],
+      "eccns": [],
+      "change_type": "Renewal of Temporary Denial Order (TDO)",
+      "summary": "The Bureau of Industry and Security (BIS), Department of Commerce, issued an order renewing the Temporary Denial of Export Privileges (TDP) for PJSC Aeroflot, located at 1 Arbat St., 119019, Moscow, Russia. This is a renewal of a previously issued TDO, maintaining the denial of export privileges for the named entity. No additional details regarding the scope, duration, or specific grounds for renewal are available from the supplied document metadata.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/17/2026-19020/pjsc-aeroflot-1-arbat-st-119019-moscow-russia-order-renewing-temporary-denial-of-export-privileges",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19021",
+      "publication_date": "2026-09-17",
+      "effective_date": null,
+      "title": "Azur Air, Office 29, Vzletnaya St. 57, Krasnoyarsk, Russia 660020; Order Renewing Temporary Denial of Export Privileges",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF COMMERCE",
+          "name": "Commerce Department",
+          "id": 54,
+          "url": "https://www.federalregister.gov/agencies/commerce-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/54",
+          "parent_id": null,
+          "slug": "commerce-department"
+        },
+        {
+          "raw_name": "Bureau of Industry and Security",
+          "name": "Industry and Security Bureau",
+          "id": 241,
+          "url": "https://www.federalregister.gov/agencies/industry-and-security-bureau",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/241",
+          "parent_id": 54,
+          "slug": "industry-and-security-bureau"
+        }
+      ],
+      "score": 15,
+      "countries": [
+        "Russia"
+      ],
+      "entities": [
+        "Azur Air, Office 29, Vzletnaya St. 57, Krasnoyarsk, Russia 660020"
+      ],
+      "eccns": [],
+      "change_type": "Renewal of Temporary Denial Order (TDO)",
+      "summary": "The Bureau of Industry and Security (BIS), U.S. Department of Commerce, has issued an order renewing the Temporary Denial of Export Privileges (TDP) against Azur Air, located at Office 29, Vzletnaya St. 57, Krasnoyarsk, Russia 660020. This notice was published in the Federal Register at 91 FR 58843 on September 17, 2026. No additional details regarding the basis for the denial, specific ECCNs, EAR sections, or licensing conditions are available from the source document metadata provided.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/17/2026-19021/azur-air-office-29-vzletnaya-st-57-krasnoyarsk-russia-660020-order-renewing-temporary-denial-of",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19078",
+      "publication_date": "2026-09-17",
+      "effective_date": null,
+      "title": "Notice of Determinations; Culturally Significant Objects Being Imported for Exhibition-Determinations: \u201cDead Sea Scrolls: The Exhibition\u201d Exhibition",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/17/2026-19078/notice-of-determinations-culturally-significant-objects-being-imported-for-exhibition-determinations",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19081",
+      "publication_date": "2026-09-17",
+      "effective_date": null,
+      "title": "Notice of Determinations; Culturally Significant Objects Being Imported for Exhibition-Determinations: \u201cRembrandt's Lions: Art and Exile in the Dutch Republic\u201d Exhibition",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/17/2026-19081/notice-of-determinations-culturally-significant-objects-being-imported-for-exhibition-determinations",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19093",
+      "publication_date": "2026-09-17",
+      "effective_date": null,
+      "title": "Notice of Determinations; Culturally Significant Objects Being Imported for Exhibition-Determinations: \u201cMasterpieces of Printmaking: 1460-Now\u201d Exhibition",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/17/2026-19093/notice-of-determinations-culturally-significant-objects-being-imported-for-exhibition-determinations",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19142",
+      "publication_date": "2026-09-18",
+      "effective_date": null,
+      "title": "60-Day Notice of Proposed Information Collection: DS-864E, Request for Exemption From Immigrant Visa Applicant's Affidavit of Support",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/18/2026-19142/60-day-notice-of-proposed-information-collection-ds-864e-request-for-exemption-from-immigrant-visa",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19161",
+      "publication_date": "2026-09-18",
+      "effective_date": "2026-09-18",
+      "title": "International Traffic in Arms Regulations: Clarifying Policies of Denial, Updating the Major Non-NATO Ally List, and Minor Corrections",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 14,
+      "countries": [
+        "Ethiopia",
+        "Somalia",
+        "Saudi Arabia",
+        "Peru"
+      ],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Final Rule",
+      "summary": "The Department of State is amending the ITAR to: (1) clarify certain policy-of-denial provisions; (2) update country-specific policies for Ethiopia and Somalia; (3) add Saudi Arabia and Peru to the list of major non-NATO allies (MNNA); and (4) make miscellaneous minor corrections. The rule was published and became effective on September 18, 2026 (91 FR 59059).",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/18/2026-19161/international-traffic-in-arms-regulations-clarifying-policies-of-denial-updating-the-major-non-nato",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19190",
+      "publication_date": "2026-09-18",
+      "effective_date": null,
+      "title": "Commission on Social Impact Partnerships; Public Meeting",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/18/2026-19190/commission-on-social-impact-partnerships-public-meeting",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19211",
+      "publication_date": "2026-09-18",
+      "effective_date": "2026-10-19",
+      "title": "International Traffic in Arms Regulations: Modification of U.S. Munitions List Category XX(a)",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 22,
+      "countries": [],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Final Rule with Request for Comments",
+      "summary": "The Department of State amends the ITAR to remove certain uncrewed underwater vehicles (UUVs) from USML Category XX(a) and makes conforming changes to related controls. The rule also solicits public comments to further refine ITAR controls on UUVs and to identify possible enhancements to the license exemption for certain UUV-related activities. Items removed from the USML would presumptively fall under Commerce Department (EAR) jurisdiction.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/18/2026-19211/international-traffic-in-arms-regulations-modification-of-us-munitions-list-category-xxa",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19223",
+      "publication_date": "2026-09-21",
+      "effective_date": "2026-10-21",
+      "title": "Public Access to Information",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/21/2026-19223/public-access-to-information",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19287",
+      "publication_date": "2026-09-22",
+      "effective_date": null,
+      "title": "Notice of OFAC Sanctions Action",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 18,
+      "countries": [],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Sanctions Designation / SDN List Addition",
+      "summary": "OFAC is publishing the names of one or more persons added to the Specially Designated Nationals and Blocked Persons List (SDN List) based on a determination that applicable legal criteria were satisfied. All property and interests in property subject to U.S. jurisdiction belonging to designated persons are blocked. U.S. persons are generally prohibited from engaging in transactions with the designated persons. Specific names of designated persons, applicable legal authority, and country affiliations are not provided in the source document excerpt.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/22/2026-19287/notice-of-ofac-sanctions-action",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19312",
+      "publication_date": "2026-09-22",
+      "effective_date": "2026-11-02",
+      "title": "Unsafe or Unsound Practices, Matters Requiring Attention; Correction",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of the Comptroller of the Currency",
+          "name": "Comptroller of the Currency",
+          "id": 80,
+          "url": "https://www.federalregister.gov/agencies/comptroller-of-the-currency",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/80",
+          "parent_id": 497,
+          "slug": "comptroller-of-the-currency"
+        },
+        {
+          "raw_name": "FEDERAL DEPOSIT INSURANCE CORPORATION",
+          "name": "Federal Deposit Insurance Corporation",
+          "id": 164,
+          "url": "https://www.federalregister.gov/agencies/federal-deposit-insurance-corporation",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/164",
+          "parent_id": null,
+          "slug": "federal-deposit-insurance-corporation"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/22/2026-19312/unsafe-or-unsound-practices-matters-requiring-attention-correction",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19404",
+      "publication_date": "2026-09-23",
+      "effective_date": "2026-09-23",
+      "title": "International Traffic in Arms Regulations: Clarifying Policies of Denial, Updating the Major Non-NATO Ally List, and Minor Corrections; Corrections",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 14,
+      "countries": [
+        "Ethiopia",
+        "Somalia",
+        "Saudi Arabia",
+        "Peru"
+      ],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Correction to Final Rule",
+      "summary": "This document is a correcting amendment to a final rule originally published on September 18, 2026 (91 FR 60299). The September 18 rule revised the ITAR to: (1) clarify certain policy-of-denial provisions; (2) update country policies for Ethiopia and Somalia; (3) add Saudi Arabia and Peru to the list of major non-NATO allies (MNNA); and (4) make miscellaneous corrections. The September 18 document contained incorrect amendatory instructions that inadvertently removed regulatory text. This September 23, 2026 correction restores that text and corrects the final regulations.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/23/2026-19404/international-traffic-in-arms-regulations-clarifying-policies-of-denial-updating-the-major-non-nato",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19415",
+      "publication_date": "2026-09-23",
+      "effective_date": null,
+      "title": "Notice of OFAC Sanctions Action",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 18,
+      "countries": [
+        "Ethiopia"
+      ],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Delisting / SDN List Removal",
+      "summary": "OFAC has removed one or more persons from the Specially Designated Nationals and Blocked Persons (SDN) List whose property and interests in property had been blocked under Ethiopia sanctions authorities. The notice was published in the Federal Register at 91 FR 60490 on September 23, 2026. Specific names of the removed persons are not provided in the source excerpt.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/23/2026-19415/notice-of-ofac-sanctions-action",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19421",
+      "publication_date": "2026-09-23",
+      "effective_date": null,
+      "title": "Publication of International Criminal Court-Related Sanctions Regulations Web General License 12",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 11,
+      "countries": [],
+      "entities": [],
+      "eccns": [],
+      "change_type": "General License Publication",
+      "summary": "OFAC is publishing in the Federal Register General License 12 (GL 12) issued under the International Criminal Court-Related Sanctions Regulations. GL 12 was previously made available on OFAC's website and is now being formally published in the Federal Register at 91 FR 60303. No new regulatory requirements are introduced by this action; it is a publication of an existing web-posted general license.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/23/2026-19421/publication-of-international-criminal-court-related-sanctions-regulations-web-general-license-12",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19422",
+      "publication_date": "2026-09-23",
+      "effective_date": null,
+      "title": "Publication of Venezuela Sanctions Regulations Web General Licenses 5X and 5Y",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 14,
+      "countries": [
+        "Venezuela"
+      ],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Rule \u2013 Publication of Previously Issued Web General Licenses",
+      "summary": "OFAC is formally publishing in the Federal Register two general licenses (GL 5X and GL 5Y) issued under the Venezuela Sanctions Regulations. Both GLs were previously made available on OFAC's website. This publication (91 FR 60304) incorporates them into the official regulatory record. No substantive new requirements are created by this publication action; the GLs were already in effect prior to this Federal Register notice.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/23/2026-19422/publication-of-venezuela-sanctions-regulations-web-general-licenses-5x-and-5y",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19423",
+      "publication_date": "2026-09-23",
+      "effective_date": null,
+      "title": "Publication of the Democratic Republic of the Congo Sanctions Regulations Web General License 2",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 11,
+      "countries": [
+        "Democratic Republic of the Congo"
+      ],
+      "entities": [],
+      "eccns": [],
+      "change_type": "General License Publication",
+      "summary": "OFAC is formally publishing in the Federal Register General License 2 (GL 2), issued under the Democratic Republic of the Congo Sanctions Regulations. GL 2 was previously made available on OFAC's website. This Federal Register publication does not create new regulatory requirements; it formalizes and makes publicly available in the official register a license that was already in effect.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/23/2026-19423/publication-of-the-democratic-republic-of-the-congo-sanctions-regulations-web-general-license-2",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19424",
+      "publication_date": "2026-09-23",
+      "effective_date": null,
+      "title": "Publication of Iran-Related Web General Licenses Y and Z",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 10,
+      "countries": [
+        "Iran"
+      ],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Rule",
+      "summary": "OFAC is publishing two Iran-related General Licenses \u2014 GL Y and GL Z \u2014 in the Federal Register. These GLs were previously made available on OFAC's website and are now being formally published in the Federal Register. No additional substantive detail regarding the scope, conditions, or effective dates of GL Y or GL Z is provided in the source text.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/23/2026-19424/publication-of-iran-related-web-general-licenses-y-and-z",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19462",
+      "publication_date": "2026-09-23",
+      "effective_date": null,
+      "title": "Renewal of the Internal Revenue Service Advisory Committee",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/23/2026-19462/renewal-of-the-internal-revenue-service-advisory-committee",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19488",
+      "publication_date": "2026-09-23",
+      "effective_date": null,
+      "title": "Notice of OFAC Sanctions Action",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 18,
+      "countries": [],
+      "entities": [],
+      "eccns": [],
+      "change_type": "SDN List Addition",
+      "summary": "OFAC is publishing the names of one or more persons added to the Specially Designated Nationals and Blocked Persons List (SDN List) based on a determination that applicable legal criteria were satisfied. All property and interests in property subject to U.S. jurisdiction of the listed persons are blocked, and U.S. persons are generally prohibited from engaging in transactions with them. Specific names, nationalities, and legal authorities are not disclosed in the supplied document excerpt.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/23/2026-19488/notice-of-ofac-sanctions-action",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19498",
+      "publication_date": "2026-09-23",
+      "effective_date": null,
+      "title": "Guidance and Procedures for Implementing Tariff Adjustments for Specialty Pharmaceuticals and Associated Pharmaceutical Ingredients and Technical Corrections to the Harmonized Tariff Schedule of the United States for Duties Imposed Under Proclamation 11020",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF COMMERCE",
+          "name": "Commerce Department",
+          "id": 54,
+          "url": "https://www.federalregister.gov/agencies/commerce-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/54",
+          "parent_id": null,
+          "slug": "commerce-department"
+        },
+        {
+          "raw_name": "Bureau of Industry and Security",
+          "name": "Industry and Security Bureau",
+          "id": 241,
+          "url": "https://www.federalregister.gov/agencies/industry-and-security-bureau",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/241",
+          "parent_id": 54,
+          "slug": "industry-and-security-bureau"
+        }
+      ],
+      "score": 7,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/23/2026-19498/guidance-and-procedures-for-implementing-tariff-adjustments-for-specialty-pharmaceuticals-and",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19533",
+      "publication_date": "2026-09-24",
+      "effective_date": null,
+      "title": "Meeting of the Cultural Property Advisory Committee; Proposals To Extend Bilateral Cultural Property Agreements With Cyprus, Guatemala, and Peru Action: Notice",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 2,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/24/2026-19533/meeting-of-the-cultural-property-advisory-committee-proposals-to-extend-bilateral-cultural-property",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19537",
+      "publication_date": "2026-09-24",
+      "effective_date": "2026-09-22",
+      "title": "Measures To Restrict Stockpiling of Polysilicon and Polysilicon Derivatives Under Proclamation 11052",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF COMMERCE",
+          "name": "Commerce Department",
+          "id": 54,
+          "url": "https://www.federalregister.gov/agencies/commerce-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/54",
+          "parent_id": null,
+          "slug": "commerce-department"
+        },
+        {
+          "raw_name": "Bureau of Industry and Security",
+          "name": "Industry and Security Bureau",
+          "id": 241,
+          "url": "https://www.federalregister.gov/agencies/industry-and-security-bureau",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/241",
+          "parent_id": 54,
+          "slug": "industry-and-security-bureau"
+        }
+      ],
+      "score": 9,
+      "countries": [],
+      "entities": [
+        "U.S. Customs and Border Protection (CBP)"
+      ],
+      "eccns": [],
+      "change_type": "Temporary Final Rule (TFR)",
+      "summary": "This Temporary Final Rule (TFR) implements measures ordered by Proclamation 11052 (August 6, 2026) to restrict the stockpiling of polysilicon and polysilicon derivatives (Polysilicon Products) in advance of import adjustments effective December 4, 2026. BIS establishes: (1) criteria and processes to monitor existing importers for evidence of stockpiling; (2) limitations on newly established importers' ability to stockpile; (3) import prohibition procedures for companies found to be stockpiling; (4) a waiver process for companies subject to import prohibitions; and (5) import limitations on new importers registering with CBP on or after August 6, 2026.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/24/2026-19537/measures-to-restrict-stockpiling-of-polysilicon-and-polysilicon-derivatives-under-proclamation-11052",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19560",
+      "publication_date": "2026-09-24",
+      "effective_date": null,
+      "title": "Notification of Citizens Coinage Advisory Committee Public Meeting-October 6, 2026",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "United States Mint",
+          "name": "United States Mint",
+          "id": 513,
+          "url": "https://www.federalregister.gov/agencies/united-states-mint",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/513",
+          "parent_id": 497,
+          "slug": "united-states-mint"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/24/2026-19560/notification-of-citizens-coinage-advisory-committee-public-meeting-october-6-2026",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19602",
+      "publication_date": "2026-09-24",
+      "effective_date": null,
+      "title": "Agency Information Collection Activities; Comment Request on Tax Return Preparer Complaint Process and Fraud or Misconduct Affidavit",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Internal Revenue Service",
+          "name": "Internal Revenue Service",
+          "id": 254,
+          "url": "https://www.federalregister.gov/agencies/internal-revenue-service",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/254",
+          "parent_id": 497,
+          "slug": "internal-revenue-service"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/24/2026-19602/agency-information-collection-activities-comment-request-on-tax-return-preparer-complaint-process",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19657",
+      "publication_date": "2026-09-25",
+      "effective_date": "2026-09-25",
+      "title": "Terrorism List Governments Sanctions Regulations",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 15,
+      "countries": [
+        "Syria"
+      ],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Final Rule \u2013 Amendment",
+      "summary": "OFAC is amending the Terrorism List Governments Sanctions Regulations to implement changes resulting from the rescission of Syria's designation as a State Sponsor of Terrorism. The specific amendment removes and reserves a Syria-specific general license that is no longer necessary following the rescission of that designation.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/25/2026-19657/terrorism-list-governments-sanctions-regulations",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19666",
+      "publication_date": "2026-09-25",
+      "effective_date": "2026-10-26",
+      "title": "Estate Tax Closing Letter User Fee Update",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Internal Revenue Service",
+          "name": "Internal Revenue Service",
+          "id": 254,
+          "url": "https://www.federalregister.gov/agencies/internal-revenue-service",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/254",
+          "parent_id": 497,
+          "slug": "internal-revenue-service"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/25/2026-19666/estate-tax-closing-letter-user-fee-update",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19678",
+      "publication_date": "2026-09-25",
+      "effective_date": "2026-09-25",
+      "title": "Sanctions Penalties Regulations",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 11,
+      "countries": [],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Final Rule",
+      "summary": "OFAC is adding new Sanctions Penalties Regulations that consolidate previously existing information regarding penalties applicable to multiple OFAC-administered sanctions programs into a single regulatory framework. This is a consolidation of existing penalty information, not an expansion of substantive sanctions requirements.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/25/2026-19678/sanctions-penalties-regulations",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19690",
+      "publication_date": "2026-09-25",
+      "effective_date": null,
+      "title": "Open Meeting of the Taxpayer Advocacy Panel Joint Committee",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Internal Revenue Service",
+          "name": "Internal Revenue Service",
+          "id": 254,
+          "url": "https://www.federalregister.gov/agencies/internal-revenue-service",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/254",
+          "parent_id": 497,
+          "slug": "internal-revenue-service"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/25/2026-19690/open-meeting-of-the-taxpayer-advocacy-panel-joint-committee",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19721",
+      "publication_date": "2026-09-28",
+      "effective_date": null,
+      "title": "Notice of Determinations; Culturally Significant Object Being Imported for Exhibition-Determinations: \u201cDawn of Christianity: A Preview\u201d and \u201cJordan: Dawn of Christianity\u201d Exhibitions",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/28/2026-19721/notice-of-determinations-culturally-significant-object-being-imported-for-exhibition-determinations",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19776",
+      "publication_date": "2026-09-28",
+      "effective_date": null,
+      "title": "Notice of Determinations; Culturally Significant Objects Being Imported for Exhibition-Determinations: \u201cWith Full Consent,\u201d Exhibition",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/28/2026-19776/notice-of-determinations-culturally-significant-objects-being-imported-for-exhibition-determinations",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19778",
+      "publication_date": "2026-09-28",
+      "effective_date": null,
+      "title": "Notice of Determinations; Culturally Significant Object Being Imported for Exhibition-Determinations: Exhibition of \u201cPanel From the Frieze of Archers\u201d Object",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/28/2026-19778/notice-of-determinations-culturally-significant-object-being-imported-for-exhibition-determinations",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "C1-2026-18574",
+      "publication_date": "2026-09-28",
+      "effective_date": null,
+      "title": "Information Reporting Regarding Qualified Opportunity Zones and Updated Qualified Opportunity Fund Certification and Decertification Procedures",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Internal Revenue Service",
+          "name": "Internal Revenue Service",
+          "id": 254,
+          "url": "https://www.federalregister.gov/agencies/internal-revenue-service",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/254",
+          "parent_id": 497,
+          "slug": "internal-revenue-service"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/28/C1-2026-18574/information-reporting-regarding-qualified-opportunity-zones-and-updated-qualified-opportunity-fund",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19888",
+      "publication_date": "2026-09-29",
+      "effective_date": null,
+      "title": "Election To Pay in Installments Tax on Gain From Certain Farmland Property",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Internal Revenue Service",
+          "name": "Internal Revenue Service",
+          "id": 254,
+          "url": "https://www.federalregister.gov/agencies/internal-revenue-service",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/254",
+          "parent_id": 497,
+          "slug": "internal-revenue-service"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/29/2026-19888/election-to-pay-in-installments-tax-on-gain-from-certain-farmland-property",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19927",
+      "publication_date": "2026-09-29",
+      "effective_date": null,
+      "title": "URAL Airlines JSC, Utrenniy Lane 1-g, Yekaterinburg, Russia 620025; Order Renewing Temporary Denial of Export Privileges",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF COMMERCE",
+          "name": "Commerce Department",
+          "id": 54,
+          "url": "https://www.federalregister.gov/agencies/commerce-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/54",
+          "parent_id": null,
+          "slug": "commerce-department"
+        },
+        {
+          "raw_name": "Bureau of Industry and Security",
+          "name": "Industry and Security Bureau",
+          "id": 241,
+          "url": "https://www.federalregister.gov/agencies/industry-and-security-bureau",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/241",
+          "parent_id": 54,
+          "slug": "industry-and-security-bureau"
+        }
+      ],
+      "score": 15,
+      "countries": [
+        "Russia"
+      ],
+      "entities": [
+        "URAL Airlines JSC, Utrenniy Lane 1-g, Yekaterinburg, Russia 620025"
+      ],
+      "eccns": [],
+      "change_type": "Renewal of Temporary Denial Order (TDO)",
+      "summary": "The Bureau of Industry and Security (BIS), Department of Commerce, issued a notice renewing a Temporary Denial Order (TDO) against URAL Airlines JSC, located at Utrenniy Lane 1-g, Yekaterinburg, Russia 620025. The TDO denies URAL Airlines JSC export privileges under the Export Administration Regulations (EAR). This is a renewal of a previously issued temporary denial, not an initial order. Published at 91 FR 61384 on September 29, 2026.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/29/2026-19927/ural-airlines-jsc-utrenniy-lane-1-g-yekaterinburg-russia-620025-order-renewing-temporary-denial-of",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19966",
+      "publication_date": "2026-09-30",
+      "effective_date": "2026-09-30",
+      "title": "Forms and Procedures for Review of State Certifications by the Stablecoin Certification Review Committee",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-19966/forms-and-procedures-for-review-of-state-certifications-by-the-stablecoin-certification-review",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19973",
+      "publication_date": "2026-09-30",
+      "effective_date": "2026-09-30",
+      "title": "Cuban Assets Control Regulations",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 8,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-19973/cuban-assets-control-regulations",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19974",
+      "publication_date": "2026-09-30",
+      "effective_date": null,
+      "title": "Notice of Determinations; Culturally Significant Objects Being Imported for Conservation and Exhibition-Determinations: \u201cPainting With Fire: Susanne de Court and the Art of Enamel\u201d Exhibition",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-19974/notice-of-determinations-culturally-significant-objects-being-imported-for-conservation-and",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19975",
+      "publication_date": "2026-09-30",
+      "effective_date": null,
+      "title": "Notice of Determinations; Culturally Significant Object Being Imported for Exhibition-Determinations: \u201cMaking History: Manet's `Execution of Maximilian' From the National Gallery, London\u201d Exhibition",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-19975/notice-of-determinations-culturally-significant-object-being-imported-for-exhibition-determinations",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19977",
+      "publication_date": "2026-09-30",
+      "effective_date": "2026-09-30",
+      "title": "Cuba Sanctions Regulations",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 14,
+      "countries": [
+        "Cuba"
+      ],
+      "entities": [],
+      "eccns": [],
+      "change_type": "New Rule / Interim Regulations",
+      "summary": "OFAC is adding new regulations to implement a May 1, 2026 Cuba-related Executive Order. These regulations are characterized as an initial implementation, with OFAC expressly stating its intent to supplement them with a more comprehensive regulatory framework that may include additional interpretive guidance, definitions, general licenses, and other regulatory provisions. Published and effective as of September 30, 2026 (91 FR 61748).",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-19977/cuba-sanctions-regulations",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19978",
+      "publication_date": "2026-09-30",
+      "effective_date": "2026-09-30",
+      "title": "Iranian Transactions and Sanctions Regulations",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 16,
+      "countries": [
+        "Iran"
+      ],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Final Rule - Amendment",
+      "summary": "OFAC is adopting a final rule amending the Iranian Transactions and Sanctions Regulations (ITSR) to implement certain provisions of a January 10, 2020 Iran-related Executive Order. The amendment revises an existing definition, revises an existing exemption, and incorporates two exemptions derived from the January 10, 2020 Iran-related Executive Order.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-19978/iranian-transactions-and-sanctions-regulations",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-19979",
+      "publication_date": "2026-09-30",
+      "effective_date": null,
+      "title": "Notice of Determinations; Culturally Significant Objects Being Imported for Exhibition-Determinations: \u201cFantasy and Reality: The Art of Johan Tobias Sergel\u201d Exhibition",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-19979/notice-of-determinations-culturally-significant-objects-being-imported-for-exhibition-determinations",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20006",
+      "publication_date": "2026-09-30",
+      "effective_date": null,
+      "title": "Publication of Venezuela Sanctions Regulations Web General Licenses 46C, 47A, 48B, 50B, 51B, 52A, and 54A",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 14,
+      "countries": [
+        "Venezuela"
+      ],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Rule",
+      "summary": "OFAC is formally publishing in the Federal Register seven General Licenses (GLs 46C, 47A, 48B, 50B, 51B, 52A, and 54A) issued under the Venezuela Sanctions Regulations. Each of these GLs was previously made available on OFAC's website but is now being incorporated into the official Federal Register record. The source document does not specify the substantive scope or conditions of each individual GL.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20006/publication-of-venezuela-sanctions-regulations-web-general-licenses-46c-47a-48b-50b-51b-52a-and-54a",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20007",
+      "publication_date": "2026-09-30",
+      "effective_date": "2026-09-30",
+      "title": "Removing Duplicative Penalties Information and Reorganizing Certain Parts",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 11,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20007/removing-duplicative-penalties-information-and-reorganizing-certain-parts",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20008",
+      "publication_date": "2026-09-30",
+      "effective_date": null,
+      "title": "Publication of Venezuela Sanctions Regulations Web General Licenses 52, 53, 54, 55, 56, 57, and 58",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 14,
+      "countries": [
+        "Venezuela"
+      ],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Final Rule \u2013 Publication of Previously Issued General Licenses",
+      "summary": "OFAC is formally publishing in the Federal Register seven General Licenses (GLs 52 through 58) issued under the Venezuela Sanctions Regulations. Each GL had previously been made available on OFAC's website but is now being codified via Federal Register publication (91 FR 61771). No new substantive regulatory requirements are introduced; this action makes existing web-based GLs part of the official Federal Register record.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20008/publication-of-venezuela-sanctions-regulations-web-general-licenses-52-53-54-55-56-57-and-58",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20009",
+      "publication_date": "2026-09-30",
+      "effective_date": null,
+      "title": "Publication of Venezuela Sanctions Regulations Web General Licenses 46D, 47B, 48C, 50C, 51C, 52B, 54B, and 61A",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 14,
+      "countries": [
+        "Venezuela"
+      ],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Publication/Codification of Existing Web General Licenses",
+      "summary": "OFAC is formally publishing in the Federal Register eight general licenses (GLs 46D, 47B, 48C, 50C, 51C, 52B, 54B, and 61A) issued under the Venezuela Sanctions Regulations. These GLs were previously issued and made available on OFAC's website; this action brings them into the Federal Register record. No new substantive regulatory changes are indicated by the source text \u2014 this is a publication action, not a new rulemaking.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20009/publication-of-venezuela-sanctions-regulations-web-general-licenses-46d-47b-48c-50c-51c-52b-54b-and",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20010",
+      "publication_date": "2026-09-30",
+      "effective_date": null,
+      "title": "Publication of Iran-Related Web General Licenses X and X1",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 10,
+      "countries": [
+        "Iran"
+      ],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Rule",
+      "summary": "OFAC is publishing two Iran-related general licenses (GL X and GL X1) that were previously available only on OFAC's website. GL X was revoked and superseded by GL X1. GL X1 has since expired. This Federal Register notice serves as a formal publication of record for both instruments; neither GL is currently operative.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20010/publication-of-iran-related-web-general-licenses-x-and-x1",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20011",
+      "publication_date": "2026-09-30",
+      "effective_date": null,
+      "title": "Publication of Transnational Criminal Organizations Sanctions Regulations Web General License 2",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 11,
+      "countries": [],
+      "entities": [],
+      "eccns": [],
+      "change_type": "General License Publication",
+      "summary": "OFAC is publishing in the Federal Register a general license (GL 2) issued under the Transnational Criminal Organizations Sanctions Regulations. GL 2 was previously made available on OFAC's website and is now being formally published in the Federal Register. No new regulatory requirements are introduced by this publication; the GL was already in effect via OFAC's website prior to this Federal Register notice.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20011/publication-of-transnational-criminal-organizations-sanctions-regulations-web-general-license-2",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20012",
+      "publication_date": "2026-09-30",
+      "effective_date": null,
+      "title": "Publication of Venezuela Sanctions Regulations Web General License 5W",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 14,
+      "countries": [
+        "Venezuela"
+      ],
+      "entities": [],
+      "eccns": [],
+      "change_type": "General License Publication (Codification of Previously Web-Published GL)",
+      "summary": "OFAC is formally publishing in the Federal Register General License 5W (GL 5W), issued under the Venezuela Sanctions Regulations. GL 5W was previously made available on OFAC's website but is now being published in the Federal Register at 91 FR 61771. The source document does not describe the specific authorizations, scope, conditions, or expiration terms of GL 5W.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20012/publication-of-venezuela-sanctions-regulations-web-general-license-5w",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20014",
+      "publication_date": "2026-09-30",
+      "effective_date": null,
+      "title": "Publication of Russian Harmful Foreign Activities Sanctions Regulations Web General Licenses 131E, 131F, and 131G",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 17,
+      "countries": [
+        "Russia"
+      ],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Rule - Publication of General Licenses",
+      "summary": "OFAC is publishing three general licenses (GLs 131E, 131F, and 131G) in the Federal Register (91 FR 61762) that were previously issued and made available on OFAC's website pursuant to the Russian Harmful Foreign Activities Sanctions Regulations. This Federal Register action formalizes publication of pre-existing GLs; no new licensing authority is created by this notice.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20014/publication-of-russian-harmful-foreign-activities-sanctions-regulations-web-general-licenses-131e",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20021",
+      "publication_date": "2026-09-30",
+      "effective_date": null,
+      "title": "Employer Contributions to Trump Accounts and Nondiscrimination Rules for Dependent Care Assistance Programs; Hearing",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Internal Revenue Service",
+          "name": "Internal Revenue Service",
+          "id": 254,
+          "url": "https://www.federalregister.gov/agencies/internal-revenue-service",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/254",
+          "parent_id": 497,
+          "slug": "internal-revenue-service"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20021/employer-contributions-to-trump-accounts-and-nondiscrimination-rules-for-dependent-care-assistance",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20026",
+      "publication_date": "2026-09-30",
+      "effective_date": "2026-09-30",
+      "title": "Trump Accounts",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Internal Revenue Service",
+          "name": "Internal Revenue Service",
+          "id": 254,
+          "url": "https://www.federalregister.gov/agencies/internal-revenue-service",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/254",
+          "parent_id": 497,
+          "slug": "internal-revenue-service"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20026/trump-accounts",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20027",
+      "publication_date": "2026-09-30",
+      "effective_date": null,
+      "title": "Trump Accounts",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Internal Revenue Service",
+          "name": "Internal Revenue Service",
+          "id": 254,
+          "url": "https://www.federalregister.gov/agencies/internal-revenue-service",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/254",
+          "parent_id": 497,
+          "slug": "internal-revenue-service"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20027/trump-accounts",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20032",
+      "publication_date": "2026-09-30",
+      "effective_date": null,
+      "title": "Notice of OFAC Sanctions Action",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 18,
+      "countries": [],
+      "entities": [],
+      "eccns": [],
+      "change_type": "SDN List Addition",
+      "summary": "OFAC is publishing the names of one or more persons added to the Specially Designated Nationals and Blocked Persons List (SDN List) based on a determination that applicable legal criteria were satisfied. All property and interests in property subject to U.S. jurisdiction belonging to the listed persons are blocked, and U.S. persons are generally prohibited from engaging in transactions with them. The specific names of the designated persons, the legal authority invoked, and the countries or programs implicated are not provided in the source text.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20032/notice-of-ofac-sanctions-action",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20040",
+      "publication_date": "2026-09-30",
+      "effective_date": null,
+      "title": "Agency Information Collection Activities; Proposed Collection; Comment Request; Annual Certification and Data Collection Report Form and Abbreviated Transaction Level Report",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Community Development Financial Institutions Fund",
+          "name": "Community Development Financial Institutions Fund",
+          "id": 78,
+          "url": "https://www.federalregister.gov/agencies/community-development-financial-institutions-fund",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/78",
+          "parent_id": 497,
+          "slug": "community-development-financial-institutions-fund"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20040/agency-information-collection-activities-proposed-collection-comment-request-annual-certification",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20047",
+      "publication_date": "2026-09-30",
+      "effective_date": null,
+      "title": "Agency Information Collection Activities; Proposed Collection; Comment Request; Community Development Financial Institutions Program-Certification Application",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Community Development Financial Institutions Fund",
+          "name": "Community Development Financial Institutions Fund",
+          "id": 78,
+          "url": "https://www.federalregister.gov/agencies/community-development-financial-institutions-fund",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/78",
+          "parent_id": 497,
+          "slug": "community-development-financial-institutions-fund"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20047/agency-information-collection-activities-proposed-collection-comment-request-community-development",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20050",
+      "publication_date": "2026-09-30",
+      "effective_date": null,
+      "title": "Notice of Information Collection and Request for Public Comment",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Community Development Financial Institutions Fund",
+          "name": "Community Development Financial Institutions Fund",
+          "id": 78,
+          "url": "https://www.federalregister.gov/agencies/community-development-financial-institutions-fund",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/78",
+          "parent_id": 497,
+          "slug": "community-development-financial-institutions-fund"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20050/notice-of-information-collection-and-request-for-public-comment",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20058",
+      "publication_date": "2026-09-30",
+      "effective_date": null,
+      "title": "Agency Information Collection Activities; Submission to the Office of Management and Budget (OMB) for Review and Approval; Comment Request; Five-Year Records Retention Requirement for Export Transactions and Boycott Actions",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF COMMERCE",
+          "name": "Commerce Department",
+          "id": 54,
+          "url": "https://www.federalregister.gov/agencies/commerce-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/54",
+          "parent_id": null,
+          "slug": "commerce-department"
+        },
+        {
+          "raw_name": "Bureau of Industry and Security",
+          "name": "Industry and Security Bureau",
+          "id": 241,
+          "url": "https://www.federalregister.gov/agencies/industry-and-security-bureau",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/241",
+          "parent_id": 54,
+          "slug": "industry-and-security-bureau"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20058/agency-information-collection-activities-submission-to-the-office-of-management-and-budget-omb-for",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20061",
+      "publication_date": "2026-10-01",
+      "effective_date": null,
+      "title": "Superfund Tax on Chemical Substances; Request To Modify List of Taxable Substances; Notice of Filing for Styrene Isoprene Block Copolymer; x+z=482, y=2,178.51, a=1.70",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Internal Revenue Service",
+          "name": "Internal Revenue Service",
+          "id": 254,
+          "url": "https://www.federalregister.gov/agencies/internal-revenue-service",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/254",
+          "parent_id": 497,
+          "slug": "internal-revenue-service"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/10/01/2026-20061/superfund-tax-on-chemical-substances-request-to-modify-list-of-taxable-substances-notice-of-filing",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20079",
+      "publication_date": "2026-10-01",
+      "effective_date": null,
+      "title": "International Traffic in Arms Regulations (ITAR): Review of the U.S. Munitions List and Related Definitions and License Exemptions",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 22,
+      "countries": [],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Proposed Rule",
+      "summary": "The Department of State proposes to amend the ITAR to refocus USML controls on the most sensitive technologies, improve regulatory transparency and clarity, and reduce regulatory burdens. Specific proposed changes include: (1) removing certain unspecified items from the USML, (2) updating definitions and standardizing regulatory text, and (3) adding a new exemption to ITAR licensing requirements. The Department also solicits public comments to further refine ITAR controls. No effective date has been established. Citation: 91 FR 62361.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/10/01/2026-20079/international-traffic-in-arms-regulations-itar-review-of-the-us-munitions-list-and-related",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20082",
+      "publication_date": "2026-10-01",
+      "effective_date": "2026-10-01",
+      "title": "International Traffic in Arms Regulations: Syria Country Policy Revision",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 18,
+      "countries": [
+        "Syria"
+      ],
+      "entities": [],
+      "eccns": [],
+      "change_type": "Final Rule",
+      "summary": "The Department of State is amending the ITAR to remove Syria from the list of countries subject to a policy of denial for licenses and other approvals. This represents a country policy revision that relaxes the prior categorical denial posture applicable to Syria under the ITAR.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/10/01/2026-20082/international-traffic-in-arms-regulations-syria-country-policy-revision",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20189",
+      "publication_date": "2026-10-02",
+      "effective_date": null,
+      "title": "Agency Information Collection Activities; Comment Request on Application to Participate in the IRS Acceptance Agent Program",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Internal Revenue Service",
+          "name": "Internal Revenue Service",
+          "id": 254,
+          "url": "https://www.federalregister.gov/agencies/internal-revenue-service",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/254",
+          "parent_id": 497,
+          "slug": "internal-revenue-service"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/10/02/2026-20189/agency-information-collection-activities-comment-request-on-application-to-participate-in-the-irs",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20190",
+      "publication_date": "2026-10-02",
+      "effective_date": null,
+      "title": "Agency Information Collection Activities; Comment Request on Discharge From or Subordination of Federal Lax Lien",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Internal Revenue Service",
+          "name": "Internal Revenue Service",
+          "id": 254,
+          "url": "https://www.federalregister.gov/agencies/internal-revenue-service",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/254",
+          "parent_id": 497,
+          "slug": "internal-revenue-service"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/10/02/2026-20190/agency-information-collection-activities-comment-request-on-discharge-from-or-subordination-of",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20213",
+      "publication_date": "2026-10-02",
+      "effective_date": null,
+      "title": "Notice of Determinations; Culturally Significant Objects Being Imported for Exhibition-Determinations: \u201cAuschwitz. Not Long Ago. Not Far Away.\u201d Exhibition",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/10/02/2026-20213/notice-of-determinations-culturally-significant-objects-being-imported-for-exhibition-determinations",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20214",
+      "publication_date": "2026-10-02",
+      "effective_date": null,
+      "title": "Notice of Determinations; Culturally Significant Objects Being Imported for Exhibition-Determinations: Exhibition of \u201cFour Norwegian Bridal Crowns\u201d",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/10/02/2026-20214/notice-of-determinations-culturally-significant-objects-being-imported-for-exhibition-determinations",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20215",
+      "publication_date": "2026-10-02",
+      "effective_date": null,
+      "title": "Notice of OFAC Sanctions Action",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "score": 18,
+      "countries": [],
+      "entities": [],
+      "eccns": [],
+      "change_type": "SDN List Addition",
+      "summary": "OFAC published a notice (91 FR 62809) adding one or more persons to the Specially Designated Nationals and Blocked Persons (SDN) List. All property and interests in property subject to U.S. jurisdiction belonging to the designated persons are blocked. U.S. persons are generally prohibited from engaging in transactions with the newly listed individuals or entities. Specific names, nationalities, countries, and legal authorities invoked are not disclosed in the excerpt provided.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/10/02/2026-20215/notice-of-ofac-sanctions-action",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20232",
+      "publication_date": "2026-10-02",
+      "effective_date": null,
+      "title": "Agency Information Collection Activities; Submission for OMB Review; Comment Request; Multiple Bureau of the Fiscal Service Information Collection Requests",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/10/02/2026-20232/agency-information-collection-activities-submission-for-omb-review-comment-request-multiple-bureau",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20263",
+      "publication_date": "2026-10-02",
+      "effective_date": null,
+      "title": "Delegation of Authority by the Secretary of State to the Official Performing the Duties of the Administrator of the U.S. Agency for International Development",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/10/02/2026-20263/delegation-of-authority-by-the-secretary-of-state-to-the-official-performing-the-duties-of-the",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20264",
+      "publication_date": "2026-10-02",
+      "effective_date": "2026-12-01",
+      "title": "Federal Scholarship Tax Credit",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Internal Revenue Service",
+          "name": "Internal Revenue Service",
+          "id": 254,
+          "url": "https://www.federalregister.gov/agencies/internal-revenue-service",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/254",
+          "parent_id": 497,
+          "slug": "internal-revenue-service"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/10/02/2026-20264/federal-scholarship-tax-credit",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20277",
+      "publication_date": "2026-10-02",
+      "effective_date": null,
+      "title": "Federal Scholarship Tax Credit",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Internal Revenue Service",
+          "name": "Internal Revenue Service",
+          "id": 254,
+          "url": "https://www.federalregister.gov/agencies/internal-revenue-service",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/254",
+          "parent_id": 497,
+          "slug": "internal-revenue-service"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/10/02/2026-20277/federal-scholarship-tax-credit",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20283",
+      "publication_date": "2026-10-05",
+      "effective_date": null,
+      "title": "60-Day Notice of Proposed Information Collection: Media Inquiry System",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF STATE",
+          "name": "State Department",
+          "id": 476,
+          "url": "https://www.federalregister.gov/agencies/state-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/476",
+          "parent_id": null,
+          "slug": "state-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/10/05/2026-20283/60-day-notice-of-proposed-information-collection-media-inquiry-system",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20371",
+      "publication_date": "2026-10-05",
+      "effective_date": null,
+      "title": "Proposal of Special Measure Prohibiting the Transmittal of Funds Regarding Transactions Involving the A7 Network's Sub-Agents",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Financial Crimes Enforcement Network",
+          "name": "Financial Crimes Enforcement Network",
+          "id": 194,
+          "url": "https://www.federalregister.gov/agencies/financial-crimes-enforcement-network",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/194",
+          "parent_id": 497,
+          "slug": "financial-crimes-enforcement-network"
+        }
+      ],
+      "score": 17,
+      "countries": [
+        "Russia",
+        "Iran"
+      ],
+      "entities": [
+        "A7 Network"
+      ],
+      "eccns": [],
+      "change_type": "Proposed Rule",
+      "summary": "FinCEN has issued a finding and notice of proposed rulemaking (NPRM) identifying transactions involving any company operating outside the United States that is controlled by the A7 Network as a class of transactions of primary money laundering concern in connection with Russian illicit finance. The A7 Network is characterized as a sanctions evasion and money laundering service with ties to Russia, used by a wide range of illicit actors including Iran and its terrorist proxies. The proposed rule would prohibit covered financial institutions from transmitting funds involving that class of transactions. This is a PROPOSED rule only; no final rule or effective date has been established.",
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/10/05/2026-20371/proposal-of-special-measure-prohibiting-the-transmittal-of-funds-regarding-transactions-involving",
+      "tier": "analyzed",
+      "due_diligence_ran": null
+    },
+    {
+      "document_number": "2026-20375",
+      "publication_date": "2026-10-05",
+      "effective_date": null,
+      "title": "Interest Rate Paid on Cash Deposited To Secure U.S. Immigration and Customs Enforcement Immigration Bonds",
+      "agency": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        }
+      ],
+      "score": 0,
+      "countries": null,
+      "entities": null,
+      "eccns": null,
+      "change_type": null,
+      "summary": null,
+      "primary_source_url": "https://www.federalregister.gov/documents/2026/10/05/2026-20375/interest-rate-paid-on-cash-deposited-to-secure-us-immigration-and-customs-enforcement-immigration",
+      "tier": "metadata_only",
+      "due_diligence_ran": null
+    }
+  ]
+}

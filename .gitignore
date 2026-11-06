@@ -19,3 +19,23 @@ venv/
 
 # System files
 .DS_Store
+
+# Generated diagnostic reports (live acceptance-test output; not source)
+diagnostics/
+
+# Evidence Analyst live acceptance-run diagnostic artifacts (not source)
+evidence_acceptance_runs/
+
+# PDFs downloaded by evidence_retrieval.py's retrieval preparation (not source)
+evidence_pdfs/
+
+# Intelligence Analyst Pass #2 live acceptance-run diagnostic artifacts (not source)
+intelligence_pass2_acceptance_runs/
+
+# Intelligence product persistence store (intelligence_store.py's default
+# INTELLIGENCE_DB_PATH) -- a completely separate SQLite file from
+# regulus_v3.DB_PATH's production bis_watcher.db; not source.
+regulus_intelligence.db
+
+# Intelligence Brief #001 live acceptance-run diagnostic artifacts (not source)
+brief_acceptance_runs/
